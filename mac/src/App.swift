@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showAlert("Kapeyn is running",
                       "Your Mac will stay awake. Look for the cup in the menu bar:\n\n"
                       + "• Click it to turn Kapeyn on or off (or press \(hotkeyText) anywhere).\n"
-                      + "• Right-click (or Control-click) it for options, including automatic modes and the lock doctor.")
+                      + "• Right-click (or Control-click) it for options, the lock doctor and Help.")
         }
     }
 
@@ -325,6 +325,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return "ok"
         case "doctor":
             return doctorReport()
+        case "guide":
+            DispatchQueue.main.async { HelpWindowController.show(topic: nil) }
+            return "Opened the Kapeyn guide."
         default:
             return "error: unknown command \"\(verb)\""
         }
@@ -514,6 +517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(item("Lock doctor: what locks my Mac?", #selector(showDoctor)))
         menu.addItem(item("Command line…", #selector(showCommandLine)))
+        menu.addItem(item("Help", #selector(showHelp)))
         menu.addItem(.separator())
         menu.addItem(item("Quit Kapeyn", #selector(quit), key: "q"))
     }
@@ -641,6 +645,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showAlert("Couldn't change the login setting", error.localizedDescription)
         }
     }
+
+    @objc func showHelp() { HelpWindowController.show(topic: nil) }
 
     @objc func showDoctor() {
         _ = showReport("Kapeyn Lock Doctor", doctorReport())

@@ -3,7 +3,7 @@ import IOKit.pwr_mgt
 
 // The "kapeyn" command. Talks to the menu bar app, starting it if needed.
 enum CLI {
-    static let verbs: Set<String> = ["on", "off", "toggle", "status", "run", "doctor", "help", "-h", "--help"]
+    static let verbs: Set<String> = ["on", "off", "toggle", "status", "run", "doctor", "guide", "help", "-h", "--help"]
 
     static let help = """
     kapeyn                      Show what Kapeyn is doing
@@ -13,6 +13,7 @@ enum CLI {
     kapeyn toggle               Switch on/off
     kapeyn run <command...>     Keep awake until the command finishes, e.g.  kapeyn run npm run build
     kapeyn doctor               Check what locks or sleeps this Mac
+    kapeyn guide                Open the full guide (also in the menu: Help)
     """
 
     static func run(_ args: [String]) -> Int32 {
@@ -31,7 +32,7 @@ enum CLI {
                 return printReply(send("on \(minutes)"))
             }
             return printReply(send("on"))
-        case "off", "toggle", "status":
+        case "off", "toggle", "status", "guide":
             return printReply(send(verb))
         case "doctor":
             return printReply(send(verb, timeout: 30))

@@ -1,4 +1,4 @@
-﻿// Kapeyn - keeps your Windows PC awake.
+// Kapeyn - keeps your Windows PC awake.
 // Compiles with the csc.exe that ships with Windows (.NET Framework 4.x, C# 5) - see build.ps1.
 //   Kapeyn.exe  - the tray app (GUI)
 //   kapeyn.com  - the command-line tool (same code, built with /define:CLI). Because Windows runs .com before
@@ -13,8 +13,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Kapeyn")]
 [assembly: AssemblyProduct("Kapeyn")]
 [assembly: AssemblyDescription("Keeps your PC awake")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyVersion("2.2.0.0")]
+[assembly: AssemblyFileVersion("2.2.0.0")]
 
 namespace Kapeyn
 {

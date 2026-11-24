@@ -17,7 +17,8 @@ namespace Kapeyn
             "kapeyn off                  Turn off\n" +
             "kapeyn toggle               Switch on/off\n" +
             "kapeyn run <command...>     Keep awake until the command finishes, e.g.  kapeyn run npm run build\n" +
-            "kapeyn doctor               Check what locks or sleeps this computer\n";
+            "kapeyn doctor               Check what locks or sleeps this computer\n" +
+            "kapeyn guide                Open the full guide (also in the menu: Help)\n";
 
         public static int Run(string[] args)
         {
@@ -42,7 +43,7 @@ namespace Kapeyn
                             return Print(Send("on " + minutes));
                         }
                         return Print(Send("on"));
-                    case "off": case "toggle": case "status": case "doctor":
+                    case "off": case "toggle": case "status": case "doctor": case "guide":
                         return Print(Send(verb));
                     case "run":
                         return RunCommand(args.Skip(1).ToArray());

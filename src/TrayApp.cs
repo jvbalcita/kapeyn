@@ -116,7 +116,8 @@ namespace Kapeyn
                 settings.Save();
                 if (!cliLaunch)
                     Notify("Kapeyn is running",
-                        "Your PC will stay awake. Click the cup in the tray to turn it on/off, right-click for options, or press " + HotkeyText + ".");
+                        "Your PC will stay awake. Click the cup in the tray to turn it on/off, or press " + HotkeyText +
+                        ". Right-click it for options and Help.");
             }
         }
 
@@ -391,6 +392,9 @@ namespace Kapeyn
                     return "error: expected release <pid>";
                 case "doctor":
                     return Doctor.Report(settings, awake, StatusLine(), EffectiveNudgeSeconds, settings.NudgeSeconds == 0, true);
+                case "guide":
+                    invoker.BeginInvoke(new Action(delegate { ShowHelp(null); }));
+                    return "Opened the Kapeyn guide.";
                 default:
                     return "error: unknown command \"" + verb + "\"";
             }
@@ -596,7 +600,8 @@ namespace Kapeyn
             m.Items.Add(new ToolStripSeparator());
 
             m.Items.Add(Item("Lock doctor: what locks my PC?", delegate { ShowDoctor(); }));
-            m.Items.Add(Item("Command line...", delegate { ShowCliHelp(); }));
+            m.Items.Add(Item("Command line...", delegate { ShowHelp("Command line"); }));
+            m.Items.Add(Item("Help", delegate { ShowHelp(null); }));
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(Item("Exit", delegate { Exit(); }));
             KeepOpenOnStickyClicks(m);
@@ -733,17 +738,23 @@ namespace Kapeyn
             using (var f = new ReportForm("Kapeyn Lock Doctor", report)) f.ShowDialog();
         }
 
-        void ShowCliHelp()
+        HelpForm helpWindow;
+
+        /// Opens the guide (one window; brings it to the front if it's already open).
+        void ShowHelp(string topic)
         {
-            string dir = Path.GetDirectoryName(Application.ExecutablePath);
-            bool installed = File.Exists(Path.Combine(dir, "kapeyn.com"));
-            string text =
-                "Control Kapeyn from PowerShell or Command Prompt:\n\n" + Cli.HelpText + "\n" +
-                (installed
-                    ? "The kapeyn command is installed next to Kapeyn.exe (" + dir + ").\n" +
-                      "If \"kapeyn\" isn't found, open a new terminal window, or run install.ps1 to add it to your PATH."
-                    : "To get the kapeyn command, download Kapeyn-Windows.zip from the Releases page and run install.ps1.");
-            using (var f = new ReportForm("Kapeyn command line", text)) f.ShowDialog();
+            if (helpWindow == null || helpWindow.IsDisposed)
+            {
+                helpWindow = new HelpForm(topic ?? "Getting started");
+                helpWindow.FormClosed += delegate { helpWindow.Dispose(); helpWindow = null; };
+                helpWindow.Show();
+            }
+            else
+            {
+                helpWindow.ShowTopic(topic);
+                if (helpWindow.WindowState == FormWindowState.Minimized) helpWindow.WindowState = FormWindowState.Normal;
+            }
+            helpWindow.Activate();
         }
     }
 
