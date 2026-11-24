@@ -100,51 +100,76 @@ The result: one small app, no admin rights, and no more "did my screen lock agai
 
 ## Install
 
-Get the latest version from the **[Releases page](https://github.com/jvbalcita/kapeyn/releases/latest)**.
+### One-line install (recommended)
 
-| Download | For | What's inside |
-|---|---|---|
-| `Kapeyn.exe` | Windows 10/11 | The app. Double-click and go, no install needed. |
-| `Kapeyn-Windows.zip` | Windows 10/11 | The app, the `kapeyn` command and an installer. **Recommended.** |
-| `Kapeyn-macOS.zip` | macOS 12+ (Apple silicon & Intel) | `Kapeyn.app` |
+**Windows 10/11.** Paste into **PowerShell**:
 
-### Windows
-
-1. Download and unzip **`Kapeyn-Windows.zip`**.
-2. Right-click **`install.ps1`** and choose **Run with PowerShell**, or run:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1
-   ```
-
-The installer:
-- copies Kapeyn to `%LOCALAPPDATA%\Programs\Kapeyn`
-- adds the `kapeyn` command to your PATH
-- creates a Start menu shortcut
-- starts Kapeyn at sign-in, and starts it now
-
-No admin rights are needed. To uninstall, run `install.ps1 -Uninstall`.
-
-> [!NOTE]
-> Kapeyn isn't code-signed yet, so the first run may show **"Windows protected your PC"**. Click **More info → Run anyway**.
-
-### macOS
-
-**Option A: download (quickest).** Unzip **`Kapeyn-macOS.zip`** and drag **Kapeyn** to Applications. On first launch macOS blocks it because it isn't notarized yet. Open **System Settings → Privacy & Security** and click **Open Anyway**, or run:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Kapeyn.app
+```powershell
+irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 | iex
 ```
 
-**Option B: build it on your Mac (no warnings).**
+**macOS 12+.** Paste into **Terminal**:
+
+```bash
+curl -fsSL https://github.com/jvbalcita/kapeyn/releases/latest/download/install-mac.sh | bash
+```
+
+**Homebrew:**
+
+```bash
+brew tap jvbalcita/kapeyn https://github.com/jvbalcita/kapeyn
+brew install kapeyn
+```
+
+| | Windows one-liner | Mac one-liner | Homebrew |
+|---|---|---|---|
+| Installs | App + `kapeyn` command (on PATH), Start menu shortcut | App in `~/Applications` + `kapeyn` command | App + `kapeyn` command |
+| Starts at sign-in | ✅ | ✅ | via the menu: *Settings → Start at login* |
+| Admin rights | not needed | not needed | not needed |
+| Security warning | **none**: PowerShell downloads aren't flagged by SmartScreen | **none**: Kapeyn is built on your Mac | **none**: built on your Mac |
+| Verifies download | SHA-256 from `SHA256SUMS.txt` | SHA-256 from `SHA256SUMS.txt` | SHA-256 in the formula |
+| Update | run the same line again | run the same line again | `brew upgrade kapeyn` |
+| Uninstall | see below | see below | `brew uninstall kapeyn` |
+
+<details>
+<summary><b>Uninstalling, and what the installers do</b></summary>
+
+**Windows uninstall:**
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1))) -Uninstall
+```
+
+The Windows installer copies `Kapeyn.exe` and `kapeyn.com` to `%LOCALAPPDATA%\Programs\Kapeyn`. It adds that folder to your user PATH, creates a Start menu shortcut, adds a start-at-sign-in entry (`HKCU\…\Run`), and starts Kapeyn.
+
+**Mac uninstall:** download the source (Code → Download ZIP) and run `bash mac/install.sh --uninstall`, or remove `~/Applications/Kapeyn.app` and `~/Library/LaunchAgents/com.kapeyn.Kapeyn.login.plist`.
+
+The Mac installer downloads the release's source and checks its SHA-256. It builds a universal `Kapeyn.app` with Apple's free Command Line Tools (it offers to install them if they're missing), copies the app to `~/Applications`, adds a login item, and links the `kapeyn` command when `/usr/local/bin` is writable.
+
+Settings are kept when you uninstall (see [Configuration reference](#configuration-reference)).
+
+</details>
+
+> [!TIP]
+> On a Mac, if Teams or Slack show you as Away, turn on **Settings → Also nudge the mouse** and allow Kapeyn under **Privacy & Security → Accessibility**. After reinstalling or upgrading, remove the old Kapeyn entry there and allow it again.
+
+### Manual downloads
+
+Every **[release](https://github.com/jvbalcita/kapeyn/releases/latest)** also has the files themselves, plus `SHA256SUMS.txt` to verify them:
+
+| Download | For | Notes |
+|---|---|---|
+| `Kapeyn.exe` | Windows 10/11 | The app; double-click and go. Unsigned, so SmartScreen may ask you to click **More info → Run anyway**. |
+| `Kapeyn-Windows.zip` | Windows 10/11 | App, `kapeyn` command and `install.ps1` (right-click → **Run with PowerShell**). |
+| `Kapeyn-macOS.zip` | macOS 12+ | `Kapeyn.app` (Apple silicon & Intel). Not notarized: allow it under **System Settings → Privacy & Security → Open Anyway**. |
+
+### From source
 
 ```bash
 git clone https://github.com/jvbalcita/kapeyn.git
-cd kapeyn/mac
-bash install.sh
+cd kapeyn/mac && bash install.sh                                 # macOS
+powershell -ExecutionPolicy Bypass -File .\install.ps1           # Windows (from the repo folder)
 ```
-
-This needs Apple's free Command Line Tools; if they're missing, run `xcode-select --install` first. The installer builds `Kapeyn.app`, copies it to `~/Applications`, starts it at login, and adds the `kapeyn` command when it can. To uninstall, run `bash install.sh --uninstall`.
 
 ## Quick start
 
@@ -494,7 +519,9 @@ kapeyn/
 │   └── install.sh          installs for the current user
 ├── help/help.md            the in-app guide (shared by both apps)
 ├── docs/images/            README images
-├── build.ps1 / install.ps1 Windows build and install scripts
+├── Formula/kapeyn.rb       Homebrew formula (tap this repository)
+├── mac/get.sh              Mac one-line installer (published as install-mac.sh)
+├── build.ps1 / install.ps1 Windows build and (one-line) install scripts
 ├── LICENSE                 MIT License
 └── .github/workflows/      CI: build both apps on every push and PR; publish releases on tags
 ```
@@ -508,7 +535,11 @@ git tag v2.2.0
 git push origin v2.2.0
 ```
 
-The workflow attaches `Kapeyn.exe`, `Kapeyn-Windows.zip` and `Kapeyn-macOS.zip` to a new GitHub Release. Remember to bump the version in `src/Program.cs` and `mac/build.sh` first.
+The workflow:
+- publishes `Kapeyn.exe`, `Kapeyn-Windows.zip`, `Kapeyn-macOS.zip`, the one-line installers (`install.ps1`, `install-mac.sh`) and `SHA256SUMS.txt` as a new GitHub Release
+- points the Homebrew formula (`Formula/kapeyn.rb`) at the new version
+
+Every push and pull request also tests all three install paths on real Windows and Mac machines. Remember to bump the version in `src/Program.cs` and `mac/build.sh` first.
 
 ## Contributing
 

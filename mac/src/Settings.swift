@@ -111,11 +111,20 @@ enum LoginItem {
         return FileManager.default.fileExists(atPath: plistURL.path)
     }
 
+    /// A path that survives upgrades: Homebrew's versioned ".../Cellar/kapeyn/2.3.0/Kapeyn.app"
+    /// becomes its stable ".../opt/kapeyn/Kapeyn.app". Other paths are unchanged.
+    static func stablePath(_ path: String) -> String {
+        guard let r = path.range(of: "/Cellar/kapeyn/[^/]+/", options: .regularExpression) else { return path }
+        return path.replacingCharacters(in: r, with: "/opt/kapeyn/")
+    }
+
+    static var appPath: String { return stablePath(Bundle.main.bundlePath) }
+
     static func set(_ enabled: Bool) throws {
         if enabled {
             let dict: [String: Any] = [
                 "Label": label,
-                "ProgramArguments": ["/usr/bin/open", "-a", Bundle.main.bundlePath],
+                "ProgramArguments": ["/usr/bin/open", "-a", appPath],
                 "RunAtLoad": true,
             ]
             try FileManager.default.createDirectory(at: plistURL.deletingLastPathComponent(),
@@ -134,6 +143,6 @@ enum LoginItem {
               let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
               let args = plist["ProgramArguments"] as? [String]
         else { return }
-        if args.last != Bundle.main.bundlePath { try? set(true) }
+        if args.last != appPath { try? set(true) }
     }
 }

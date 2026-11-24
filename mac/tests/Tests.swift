@@ -290,6 +290,13 @@ func settingsTests() {
     eq("same start and end is repaired (+8 h)", 1080, s.scheduleEndMin)
     eq("battery limit is capped", 90, s.pauseBatteryPercent)
     cleanup()
+
+    eq("login item: Homebrew's versioned path becomes the stable one", "/opt/homebrew/opt/kapeyn/Kapeyn.app",
+       LoginItem.stablePath("/opt/homebrew/Cellar/kapeyn/2.3.0/Kapeyn.app"))
+    eq("login item: Intel Homebrew too", "/usr/local/opt/kapeyn/Kapeyn.app",
+       LoginItem.stablePath("/usr/local/Cellar/kapeyn/2.3.0_1/Kapeyn.app"))
+    eq("login item: other paths unchanged", "/Users/me/Applications/Kapeyn.app",
+       LoginItem.stablePath("/Users/me/Applications/Kapeyn.app"))
 }
 
 // MARK: downloads
