@@ -61,7 +61,7 @@ The quickest option is the download from the Releases page. If you'd rather avoi
 This builds `Kapeyn.app`, copies it to `~/Applications`, sets it to start at login, and starts it. To uninstall: `bash install.sh --uninstall`.
 
 - **The `kapeyn` command:** the installer adds it when it can. Otherwise choose **Command line… → Install command** in Kapeyn's menu, which asks for your password once.
-- **Also nudge the mouse (Teams/Slack)** is off by default. macOS's activity signal already prevents the screen saver and lock. Turn the mouse nudge on if chat apps still show you as Away; macOS will ask for **Accessibility** permission.
+- **Also nudge the mouse (Teams/Slack)** is off by default. With *Keep screen on*, Kapeyn's power assertion already stops the screen saver and lock. Chat apps watch real keyboard/mouse input, though, so turn the mouse nudge on if they still show you as Away; macOS will ask for **Accessibility** permission. The lock doctor's self-test tells you whether you need it.
 - Call detection is based on "a microphone is in use". A headset that combines speakers and mic may also count while you're just playing music.
 - A MacBook still sleeps when you close the lid, unless it's connected to power and an external display.
 

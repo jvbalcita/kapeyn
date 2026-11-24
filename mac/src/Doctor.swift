@@ -118,13 +118,23 @@ enum Doctor {
                 problems.append("Mouse nudge needs Accessibility permission: System Settings > Privacy & Security > Accessibility > Kapeyn.")
             }
         }
-        // Self-test: does the activity signal reset macOS's idle timer?
+        // Self-test: does the activity signal reset macOS's idle timer (the one chat apps read)?
+        var tips: [String] = []
         let before = hidIdleSeconds()
         power.declareUserActivity()
         usleep(100_000)
         if let after = hidIdleSeconds() {
-            let ok = after < 1 || (before.map { after < $0 } ?? false)
-            lines.append("  * Self-test: idle timer after activity signal = \(String(format: "%.1f", after)) s " + (ok ? "[OK]" : "[?]"))
+            let reset = after < 1 || (before.map { $0 >= 2 && after < $0 - 1 } ?? false)
+            if reset {
+                lines.append("  * Self-test: the activity signal reset macOS's idle timer [OK]")
+            } else if (before ?? 0) < 2 {
+                lines.append("  * Self-test: skipped (you're using the Mac right now)")
+            } else {
+                lines.append("  * Self-test: the activity signal did not reset macOS's idle timer (\(Int(after)) s idle) [i]")
+                if !(s.wiggleMouse && AXIsProcessTrusted()) {
+                    tips.append("Teams/Slack may still show you as Away after a few idle minutes. If they do, turn on Settings > Also nudge the mouse.")
+                }
+            }
         }
 
         if !awake { problems.insert("Kapeyn is off right now, so none of this protection is active. Click the cup to turn it on.", at: 0) }
@@ -133,11 +143,15 @@ enum Doctor {
         lines.append("Verdict:")
         if problems.isEmpty { lines.append("  [OK] Kapeyn covers every timer found on this Mac.") }
         for p in problems { lines.append("  [!] \(p)") }
+        for t in tips { lines.append("  [i] \(t)") }
         return lines.joined(separator: "\n")
     }
 
     private static func coverage(_ f: Finding, _ s: Settings, _ nudge: Int, _ problems: inout [String]) -> String {
         if f.inputBased {
+            if s.keepScreenOn {
+                return "[OK] Covered: Kapeyn's keep-screen-on assertion stops the screen saver from starting."
+            }
             if !s.simulateActivity {
                 problems.append("\"\(f.what)\" only resets with activity. Turn on Settings > Prevent screen lock & Away status.")
                 return "[!] Not covered: only activity prevents this, and it's off."
