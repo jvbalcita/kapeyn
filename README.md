@@ -8,6 +8,8 @@
 A tiny tray / menu bar app for Windows and macOS that stops sleep, screen lock and "Away" status only when you need it.
 
 [![Build & Release](https://github.com/jvbalcita/kapeyn/actions/workflows/release.yml/badge.svg)](https://github.com/jvbalcita/kapeyn/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/jvbalcita/kapeyn?color=de802c)](https://github.com/jvbalcita/kapeyn/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%2010%2F11%20%7C%20macOS%2012%2B-6f4e37)
 ![No admin](https://img.shields.io/badge/admin%20rights-not%20needed-2e7d32)
 ![Private](https://img.shields.io/badge/telemetry-none-2e7d32)
@@ -462,6 +464,7 @@ kapeyn/
 ├── help/help.md            the in-app guide (shared by both apps)
 ├── docs/images/            README images
 ├── build.ps1 / install.ps1 Windows build and install scripts
+├── LICENSE                 MIT License
 └── .github/workflows/      CI: build both apps on every push and PR; publish releases on tags
 ```
 
@@ -478,7 +481,7 @@ The workflow attaches `Kapeyn.exe`, `Kapeyn-Windows.zip` and `Kapeyn-macOS.zip` 
 
 ## Contributing
 
-Issues and pull requests are welcome.
+Issues and pull requests are welcome. By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
 
 1. Branch from `main`.
 2. Keep Windows and macOS behaviour in step. A feature usually touches `src/` and `mac/src/`, plus `help/help.md` and this README.
@@ -491,7 +494,7 @@ Screen-lock timers on work computers are often a security control. Kapeyn is mea
 
 ## License
 
-No license has been chosen yet, so all rights are reserved by the author for now. A license will be added before the project is opened up publicly.
+Kapeyn is free and open source under the [MIT License](LICENSE). You can use, copy, modify and distribute it, including commercially, as long as you keep the copyright notice. It comes with no warranty.
 
 ---
 

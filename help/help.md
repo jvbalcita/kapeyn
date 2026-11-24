@@ -241,3 +241,4 @@ Keeps your {computer} awake: smart, light and private.
 - Website and downloads: github.com/jvbalcita/kapeyn
 - Made for Windows 10/11 and macOS 12 or later.
 - No administrator rights, no internet access, no tracking.
+- Free and open source under the MIT License.

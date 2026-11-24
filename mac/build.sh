@@ -31,6 +31,7 @@ fi
 cp "$OBJ/Kapeyn" "$APP/Contents/MacOS/Kapeyn"
 
 cp ../help/help.md "$APP/Contents/Resources/help.md" # the in-app guide, shared with Windows
+cp ../LICENSE "$APP/Contents/Resources/LICENSE"
 
 echo "Making icon..."
 "$OBJ/Kapeyn" --export-iconset "$OBJ/Kapeyn.iconset"
