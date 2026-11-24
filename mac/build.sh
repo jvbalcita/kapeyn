@@ -12,20 +12,21 @@ fi
 
 APP="dist/Kapeyn.app"
 OBJ="obj"
-SRC="src/main.swift"
-FLAGS=(-O -swift-version 5)
+SRC=(src/*.swift)
+FLAGS=(-O -swift-version 5 -module-name Kapeyn)
 
 rm -rf "$APP" "$OBJ"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$OBJ"
 
 echo "Compiling..."
-if swiftc "${FLAGS[@]}" -target arm64-apple-macos12 -o "$OBJ/Kapeyn-arm64" "$SRC" 2>"$OBJ/arm64.log" \
-   && swiftc "${FLAGS[@]}" -target x86_64-apple-macos12 -o "$OBJ/Kapeyn-x86_64" "$SRC" 2>"$OBJ/x86_64.log"; then
+if swiftc "${FLAGS[@]}" -target arm64-apple-macos12 -o "$OBJ/Kapeyn-arm64" "${SRC[@]}" 2>"$OBJ/arm64.log" \
+   && swiftc "${FLAGS[@]}" -target x86_64-apple-macos12 -o "$OBJ/Kapeyn-x86_64" "${SRC[@]}" 2>"$OBJ/x86_64.log"; then
     lipo -create -output "$OBJ/Kapeyn" "$OBJ/Kapeyn-arm64" "$OBJ/Kapeyn-x86_64"
     echo "Built a universal app (Apple silicon + Intel)."
 else
     echo "Universal build not available here; building for this Mac only."
-    swiftc "${FLAGS[@]}" -o "$OBJ/Kapeyn" "$SRC"
+    cat "$OBJ/arm64.log" "$OBJ/x86_64.log" 2>/dev/null | head -40 || true
+    swiftc "${FLAGS[@]}" -o "$OBJ/Kapeyn" "${SRC[@]}"
 fi
 cp "$OBJ/Kapeyn" "$APP/Contents/MacOS/Kapeyn"
 
@@ -44,8 +45,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key>         <string>Kapeyn</string>
     <key>CFBundleIconFile</key>           <string>Kapeyn</string>
     <key>CFBundlePackageType</key>        <string>APPL</string>
-    <key>CFBundleShortVersionString</key> <string>1.0</string>
-    <key>CFBundleVersion</key>            <string>1</string>
+    <key>CFBundleShortVersionString</key> <string>2.0</string>
+    <key>CFBundleVersion</key>            <string>2</string>
     <key>LSMinimumSystemVersion</key>     <string>12.0</string>
     <key>LSUIElement</key>                <true/>
     <key>NSAppSleepDisabled</key>         <true/>

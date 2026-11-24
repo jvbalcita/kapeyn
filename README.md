@@ -1,45 +1,49 @@
 # Kapeyn ☕
 
-Kapeyn keeps your computer awake. It's a tiny tray / menu bar app for **Windows** and **macOS**. No admin rights are needed on either.
+Kapeyn keeps your computer awake, and is smart about it. It's a tiny tray / menu bar app for **Windows** and **macOS** that needs no admin rights.
 
-- **Click the cup** to turn it on or off. A steaming cup means awake; an outline means off.
-- **Right-click** (on a Mac, also Control-click) for options:
-  - **Keep awake for**: indefinitely, or 15 min up to 8 hours.
-  - **Keep screen on**
-  - **Prevent screen lock & Away status**
-  - **Nudge when idle for**: 30 s, 1 min, 2 min or 4 min.
-  - **Start with Windows** / **Start at login**
-- Only one copy ever runs. Launching it again turns the running copy on and tells you it's already running.
+- **Click the cup** to turn it on or off. A steaming cup means awake; an outline means off. Or press **Ctrl+Alt+K** (Windows) / **⌃⌥K** (Mac) anywhere.
+- **Right-click** (on a Mac, also Control-click) for everything else.
+- Hover over the cup, or open the menu, to see *why* it's awake ("on a call", "running npm", "work hours") and when it last nudged.
 
----
+## What it does
+
+| | |
+|---|---|
+| **Keeps the PC/Mac awake** | A power request stops sleep and screen-off. |
+| **Prevents screen lock & "Away"** | When you're idle, Kapeyn sends a tiny invisible input. That resets the idle timer behind company screen-lock policies and Teams/Slack "Away". |
+| **Lock doctor** | *Lock doctor: what locks my PC?* finds every timer that can lock, blank or sleep your machine, including ones set by your company. It checks each one is covered, runs a self-test, and gives a verdict. |
+| **Auto timing** | Nudge timing defaults to **Auto**: half of the shortest lock timer the doctor finds (between 30 s and 4 min), so it's never too late. |
+| **Keep awake automatically** | Stays awake while you're **on a call** (microphone in use), while **downloading or streaming**, while **chosen apps are open**, or during **work hours** (pick the days and times). It can also turn itself off when work hours end. |
+| **`kapeyn` command** | `kapeyn on 2h`, `kapeyn off`, `kapeyn status`, `kapeyn doctor`, and `kapeyn run npm run build`, which keeps the machine awake exactly as long as the command runs. |
+| **Knows when to stop** | Lets the screen turn off when *you* lock the machine. Pauses on low battery (click the cup to override). If you turn it off during a call or download, it stays off until that ends. |
+| **One copy only** | Launching it again just turns the running copy on. |
 
 ## Download
 
-Get the latest **`Kapeyn.exe`** (Windows) or **`Kapeyn-macOS.zip`** (Mac) from the [Releases page](https://github.com/jvbalcita/kapeyn/releases/latest). Download instructions are on that page. Both are built automatically from this source code by GitHub Actions (`.github/workflows/release.yml`).
+Get the latest from the [Releases page](https://github.com/jvbalcita/kapeyn/releases/latest):
 
-To publish a new version, push a tag: `git tag v1.0.1` then `git push origin v1.0.1`.
+- **`Kapeyn.exe`** (Windows): double-click and go.
+- **`Kapeyn-Windows.zip`** (Windows): the app, the `kapeyn` command and an installer.
+- **`Kapeyn-macOS.zip`** (Mac): the app (Apple silicon & Intel).
+
+Both are built automatically from this source code by GitHub Actions (`.github/workflows/release.yml`). To publish a new version, push a tag, e.g. `git tag v2.0.1` then `git push origin v2.0.1`.
 
 ---
 
 ## Windows
 
-**Install from source** (builds it, copies it to `%LOCALAPPDATA%\Programs\Kapeyn`, adds a Start menu shortcut, starts it at sign-in, and starts it now):
+**Install** (copies the app and the `kapeyn` command to `%LOCALAPPDATA%\Programs\Kapeyn`, adds the command to your PATH, adds a Start menu shortcut, starts Kapeyn at sign-in, and starts it now):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Uninstall: `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall`. Or just double-click a downloaded `Kapeyn.exe`.
+Run this from the unzipped `Kapeyn-Windows.zip`, or from this repository (it builds first). To uninstall: `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall`.
 
-On Windows 11 the icon may be hidden behind the **^** on the taskbar. Drag it onto the taskbar to keep it visible.
-
-**Activity method** (Windows only) lets you choose how Kapeyn nudges: mouse wiggle (the pointer is put back exactly), F15 key (Caffeine's method), or both.
-
-**Build:** `powershell -ExecutionPolicy Bypass -File .\build.ps1` uses the C# compiler built into Windows and writes `dist\Kapeyn.exe`. The code is in `src\Kapeyn.cs`.
-
-**Self-check:** `dist\Kapeyn.exe --nudge-test` exits with the number of input events Windows accepted (it should be 4).
-
----
+- On Windows 11 the cup may be hidden behind the **^** on the taskbar. Drag it onto the taskbar to keep it visible.
+- **Settings → Activity method** chooses how Kapeyn nudges: mouse wiggle (the pointer is put back exactly), F15 key (Caffeine's method), or both.
+- **Build:** `powershell -ExecutionPolicy Bypass -File .\build.ps1` uses the C# compiler built into Windows and writes `dist\Kapeyn.exe` (the app) and `dist\kapeyn.com` (the command). Windows runs `.com` before `.exe`, so typing `kapeyn` gets the command.
 
 ## macOS
 
@@ -52,28 +56,19 @@ The quickest option is the download from the Releases page. If you'd rather avoi
    bash install.sh
    ```
 
-   If it says the Swift compiler is missing, run `xcode-select --install`. This installs Apple's free Command Line Tools in about 5 minutes. Then run `bash install.sh` again.
+   If it says the Swift compiler is missing, run `xcode-select --install` (Apple's free Command Line Tools, about 5 minutes). Then run it again.
 
-The installer builds `Kapeyn.app` on your Mac, copies it to `~/Applications`, sets it to start at login, and starts it. Because it's built on your own Mac, there's no "unidentified developer" warning. macOS may show a "Background item added" notice for the login item; that's expected.
+This builds `Kapeyn.app`, copies it to `~/Applications`, sets it to start at login, and starts it. To uninstall: `bash install.sh --uninstall`.
 
-Uninstall: `bash install.sh --uninstall`
-
-**How it works on a Mac**
-
-- A power assertion stops idle sleep and display sleep. To check it, run `pmset -g assertions | grep Kapeyn`.
-- When you're idle, Kapeyn tells macOS "the user is active". That resets the timer behind the screen saver and screen lock, and needs no permissions.
-- **Also nudge the mouse (Teams/Slack)** is off by default. Turn it on if Teams or Slack still shows you as Away. macOS will ask for **Accessibility** permission (System Settings → Privacy & Security → Accessibility → Kapeyn). If you rebuild or reinstall Kapeyn, you may need to turn that switch off and on again.
-- A MacBook still sleeps when you close the lid, unless it's connected to an external display and power.
-
-If the cup doesn't appear (on Macs with a notch, the menu bar can run out of room), close a few menu bar apps or hold ⌘ and drag the cup to the left.
+- **The `kapeyn` command:** the installer adds it when it can. Otherwise choose **Command line… → Install command** in Kapeyn's menu, which asks for your password once.
+- **Also nudge the mouse (Teams/Slack)** is off by default. With *Keep screen on*, Kapeyn's power assertion already stops the screen saver and lock. Chat apps watch real keyboard/mouse input, though, so turn the mouse nudge on if they still show you as Away; macOS will ask for **Accessibility** permission. The lock doctor's self-test tells you whether you need it.
+- Call detection is based on "a microphone is in use". A headset that combines speakers and mic may also count while you're just playing music.
+- A MacBook still sleeps when you close the lid, unless it's connected to power and an external display.
 
 ---
 
 ## Why this works when Caffeine doesn't
 
-Kapeyn has two layers, and both are on by default:
-
-1. **A power request.** The OS won't sleep or turn off the display while it is active.
-2. **Activity simulation, only while you're idle.** Company-managed computers often lock after a period of *no input*, whatever power requests say. Caffeine relies on an F15 key press that some setups ignore, so running more copies didn't help. Kapeyn uses input the OS always counts.
+Company-managed computers often lock after a period of **no keyboard/mouse input**, whatever power requests say. On the author's PC the lock doctor found a 5-minute company lock. Caffeine relies on an F15 key press that some setups ignore, and PowerToys Awake and most Mac apps only send power requests. Kapeyn combines a power request with idle-only input that the OS always counts. It picks the timing from your machine's actual lock settings, then tells you whether everything is covered.
 
 Settings are stored in `%APPDATA%\Kapeyn\settings.ini` on Windows, and in `defaults read com.kapeyn.Kapeyn` on macOS.
