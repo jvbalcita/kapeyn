@@ -23,7 +23,6 @@ namespace Kapeyn
         static readonly int[] DurationMinutes = { 15, 30, 60, 120, 240, 480 };
         static readonly int[] NudgeChoices = { 30, 60, 120, 240 };
         static readonly int[] BatteryChoices = { 10, 20, 30 };
-        static readonly string[] DayNames = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
         const string HotkeyText = "Ctrl+Alt+K";
 
         readonly Settings settings;
@@ -45,14 +44,17 @@ namespace Kapeyn
         List<Reason> lastAuto = new List<Reason>();
         List<Reason> reasons = new List<Reason>();
         bool awake, paused, locked, wasInWorkHours, batteryOverride, batteryNotified, hotkeyOk;
+        bool keepMenuOpen, shutdownPending;
         string pauseWhy;
         DateTime lastNudge = DateTime.MinValue;
+        DateTime lastEvaluate = DateTime.MinValue;
+        readonly HashSet<ToolStripItem> stickyItems = new HashSet<ToolStripItem>(); // clicking these keeps the menu open
         int autoNudgeSeconds = 120;
         DateTime lastPolicyScan = DateTime.MinValue;
 
         // ---- menu items ----------------------------------------------------------------------
         ToolStripMenuItem statusItem, detailItem, toggleItem, durationMenu;
-        ToolStripMenuItem callItem, netItem, appsMenu, scheduleItem, hoursMenu, daysMenu, startMenu, endMenu, endOffItem;
+        ToolStripMenuItem callItem, netItem, appsMenu, scheduleItem;
         ToolStripMenuItem screenItem, activityItem, methodMenu, intervalMenu, lockedItem, batteryMenu,
                           hotkeyItem, startActiveItem, startupItem;
 
@@ -105,7 +107,7 @@ namespace Kapeyn
             Startup.RepairPath();
             RescanPolicies();
 
-            wasInWorkHours = settings.ScheduleEnabled && Triggers.InWorkHours(settings, DateTime.Now);
+            wasInWorkHours = Triggers.InWorkHours(settings, DateTime.Now);
             if (settings.StartActive && !cliLaunch) manualOn = true;
             Evaluate(false);
 
@@ -137,14 +139,15 @@ namespace Kapeyn
                 Notify("Kapeyn", "Timer finished. Your PC can sleep again.");
             }
 
-            bool inHours = settings.ScheduleEnabled && Triggers.InWorkHours(settings, now);
-            if (wasInWorkHours && !inHours && settings.ScheduleEndTurnsOff && manualOn)
-            {
-                manualOn = false;
-                manualUntil = null;
-                Notify("Kapeyn", "Work hours are over, so Kapeyn turned itself off.");
-            }
-            wasInWorkHours = inHours;
+            // Work hours. wasInWorkHours tracks the window itself (not whether the schedule is on), so switching
+            // the schedule off never counts as "work hours ended". Only react to an end seen live: if we were
+            // asleep or suspended across it (no evaluation in the last 2 minutes), don't lock or shut down later.
+            bool fresh = (now - lastEvaluate).TotalMinutes < 2;
+            lastEvaluate = now;
+            bool inWindow = Triggers.InWorkHours(settings, now);
+            if (settings.ScheduleEnabled && wasInWorkHours && !inWindow && fresh) OnWorkHoursEnded();
+            wasInWorkHours = inWindow;
+            bool inHours = settings.ScheduleEnabled && inWindow;
 
             // Automatic reasons
             var auto = new List<Reason>();
@@ -212,6 +215,57 @@ namespace Kapeyn
             UpdateUi();
         }
 
+        void OnWorkHoursEnded()
+        {
+            if (!settings.ScheduleEndTurnsOff) return;
+            bool wasOn = manualOn;
+            manualOn = false;
+            manualUntil = null;
+
+            if (settings.EndShutdown)
+            {
+                invoker.BeginInvoke(new Action(ShutdownCountdown));
+            }
+            else if (settings.EndLock)
+            {
+                Notify("Kapeyn", "Work hours are over. Kapeyn turned itself off and locked your PC.");
+                if (!locked) Native.LockWorkStation();
+            }
+            else if (wasOn)
+            {
+                Notify("Kapeyn", "Work hours are over, so Kapeyn turned itself off.");
+            }
+        }
+
+        void ShutdownCountdown()
+        {
+            if (shutdownPending) return;
+            shutdownPending = true;
+            try
+            {
+                DialogResult result;
+                using (var f = new ShutdownForm(60)) result = f.ShowDialog();
+                if (result == DialogResult.OK)
+                {
+                    // Normal (not forced) shutdown: apps with unsaved work can still stop it.
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe", "/s /t 0")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    });
+                }
+                else
+                {
+                    Notify("Kapeyn", "Shutdown cancelled. Kapeyn is off; your PC may sleep.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Notify("Kapeyn", "Couldn't shut down: " + ex.Message);
+            }
+            finally { shutdownPending = false; }
+        }
+
         void ApplyPowerRequest()
         {
             if (!awake)
@@ -261,8 +315,19 @@ namespace Kapeyn
 
         void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
         {
-            if (e.Mode == PowerModes.Resume || e.Mode == PowerModes.StatusChange)
+            if (e.Mode == PowerModes.Resume)
+            {
+                // Woke from sleep: start fresh, so an end of work hours that passed while asleep isn't acted on.
+                invoker.BeginInvoke(new Action(delegate
+                {
+                    wasInWorkHours = Triggers.InWorkHours(settings, DateTime.Now);
+                    Evaluate(false);
+                }));
+            }
+            else if (e.Mode == PowerModes.StatusChange)
+            {
                 invoker.BeginInvoke(new Action(delegate { Evaluate(false); }));
+            }
         }
 
         void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -378,7 +443,7 @@ namespace Kapeyn
                               : "no"));
             sb.AppendLine("  Automatic: calls " + YesNo(settings.WhileCall) +
                           " | downloads " + YesNo(settings.WhileDownloading) +
-                          " | work hours " + (settings.ScheduleEnabled ? Format.Days(settings.ScheduleDays) + " " + Format.Hour(settings.ScheduleStart) + "-" + Format.Hour(settings.ScheduleEnd) : "no") +
+                          " | work hours " + (settings.ScheduleEnabled ? Format.Schedule(settings) : "no") +
                           (settings.WatchApps.Count > 0 ? " | apps " + string.Join(", ", settings.WatchApps.Select(a => a.Label).ToArray()) : ""));
             return sb.ToString();
         }
@@ -451,8 +516,8 @@ namespace Kapeyn
 
             // Automatic
             var autoMenu = new ToolStripMenuItem("Keep awake automatically");
-            callItem = Item("While I'm on a call (microphone in use)", delegate { settings.WhileCall = !settings.WhileCall; Changed(); });
-            netItem = Item("While downloading or streaming", delegate { settings.WhileDownloading = !settings.WhileDownloading; Changed(); });
+            callItem = Sticky("While I'm on a call (microphone in use)", delegate { settings.WhileCall = !settings.WhileCall; Changed(); });
+            netItem = Sticky("While downloading or streaming", delegate { settings.WhileDownloading = !settings.WhileDownloading; Changed(); });
             appsMenu = new ToolStripMenuItem("While these apps are open");
             appsMenu.DropDownItems.Add(Info("..."));
             appsMenu.DropDownOpening += delegate { PopulateApps(); };
@@ -461,50 +526,15 @@ namespace Kapeyn
             autoMenu.DropDownItems.Add(appsMenu);
             autoMenu.DropDownItems.Add(new ToolStripSeparator());
 
-            scheduleItem = Item("During work hours", delegate { settings.ScheduleEnabled = !settings.ScheduleEnabled; Changed(); });
-            hoursMenu = new ToolStripMenuItem("Work hours");
-            daysMenu = new ToolStripMenuItem("Days");
-            for (int i = 1; i <= 7; i++)
-            {
-                int day = i % 7; // Monday first
-                var d = Item(DayNames[day], delegate { settings.ScheduleDays ^= 1 << day; Changed(); });
-                d.Tag = day;
-                daysMenu.DropDownItems.Add(d);
-            }
-            startMenu = new ToolStripMenuItem("Start");
-            for (int h = 5; h <= 12; h++)
-            {
-                int hour = h;
-                var it = Item(Format.Hour(hour), delegate
-                {
-                    settings.ScheduleStart = hour;
-                    if (settings.ScheduleEnd <= hour) settings.ScheduleEnd = Math.Min(24, hour + 8);
-                    Changed();
-                });
-                it.Tag = hour;
-                startMenu.DropDownItems.Add(it);
-            }
-            endMenu = new ToolStripMenuItem("End");
-            for (int h = 13; h <= 23; h++)
-            {
-                int hour = h;
-                var it = Item(Format.Hour(hour), delegate { settings.ScheduleEnd = hour; Changed(); });
-                it.Tag = hour;
-                endMenu.DropDownItems.Add(it);
-            }
-            hoursMenu.DropDownItems.Add(daysMenu);
-            hoursMenu.DropDownItems.Add(startMenu);
-            hoursMenu.DropDownItems.Add(endMenu);
-            endOffItem = Item("Turn Kapeyn off when work hours end", delegate { settings.ScheduleEndTurnsOff = !settings.ScheduleEndTurnsOff; Changed(); });
+            scheduleItem = Sticky("During work hours", delegate { settings.ScheduleEnabled = !settings.ScheduleEnabled; Changed(); });
             autoMenu.DropDownItems.Add(scheduleItem);
-            autoMenu.DropDownItems.Add(hoursMenu);
-            autoMenu.DropDownItems.Add(endOffItem);
+            autoMenu.DropDownItems.Add(Item("Set work hours...", delegate { ShowWorkHours(); }));
             m.Items.Add(autoMenu);
 
             // Settings
             var settingsMenu = new ToolStripMenuItem("Settings");
-            screenItem = Item("Keep screen on", delegate { settings.KeepScreenOn = !settings.KeepScreenOn; Changed(); });
-            activityItem = Item("Prevent screen lock && Away status", delegate { settings.SimulateActivity = !settings.SimulateActivity; Changed(); });
+            screenItem = Sticky("Keep screen on", delegate { settings.KeepScreenOn = !settings.KeepScreenOn; Changed(); });
+            activityItem = Sticky("Prevent screen lock && Away status", delegate { settings.SimulateActivity = !settings.SimulateActivity; Changed(); });
             activityItem.ToolTipText = "Sends a tiny invisible input when you're idle, so lock timers and chat apps see you as active.";
 
             methodMenu = new ToolStripMenuItem("Activity method");
@@ -513,39 +543,39 @@ namespace Kapeyn
             AddMethod("Both (most robust)", NudgeMethod.Both);
 
             intervalMenu = new ToolStripMenuItem("Nudge when idle for");
-            var autoItem = Item("Auto (recommended)", delegate { settings.NudgeSeconds = 0; Changed(); });
+            var autoItem = Sticky("Auto (recommended)", delegate { settings.NudgeSeconds = 0; Changed(); });
             autoItem.Tag = 0;
             intervalMenu.DropDownItems.Add(autoItem);
             intervalMenu.DropDownItems.Add(new ToolStripSeparator());
             foreach (int seconds in NudgeChoices)
             {
                 int secs = seconds;
-                var it = Item(Format.Duration(secs), delegate { settings.NudgeSeconds = secs; Changed(); });
+                var it = Sticky(Format.Duration(secs), delegate { settings.NudgeSeconds = secs; Changed(); });
                 it.Tag = secs;
                 intervalMenu.DropDownItems.Add(it);
             }
 
-            lockedItem = Item("Let the screen turn off when I lock the PC", delegate { settings.ScreenOffWhenLocked = !settings.ScreenOffWhenLocked; Changed(); });
+            lockedItem = Sticky("Let the screen turn off when I lock the PC", delegate { settings.ScreenOffWhenLocked = !settings.ScreenOffWhenLocked; Changed(); });
             batteryMenu = new ToolStripMenuItem("Pause on low battery");
-            var never = Item("Never", delegate { settings.PauseBatteryPercent = 0; Changed(); });
+            var never = Sticky("Never", delegate { settings.PauseBatteryPercent = 0; Changed(); });
             never.Tag = 0;
             batteryMenu.DropDownItems.Add(never);
             foreach (int p in BatteryChoices)
             {
                 int pct = p;
-                var it = Item("Below " + pct + "%", delegate { settings.PauseBatteryPercent = pct; Changed(); });
+                var it = Sticky("Below " + pct + "%", delegate { settings.PauseBatteryPercent = pct; Changed(); });
                 it.Tag = pct;
                 batteryMenu.DropDownItems.Add(it);
             }
 
-            hotkeyItem = Item("Shortcut " + HotkeyText + " turns Kapeyn on/off", delegate
+            hotkeyItem = Sticky("Shortcut " + HotkeyText + " turns Kapeyn on/off", delegate
             {
                 settings.Hotkey = !settings.Hotkey;
                 settings.Save();
                 ApplyHotkey();
             });
-            startActiveItem = Item("Turn on when Kapeyn starts", delegate { settings.StartActive = !settings.StartActive; settings.Save(); });
-            startupItem = Item("Start with Windows", delegate
+            startActiveItem = Sticky("Turn on when Kapeyn starts", delegate { settings.StartActive = !settings.StartActive; settings.Save(); });
+            startupItem = Sticky("Start with Windows", delegate
             {
                 try { Startup.Set(!Startup.IsEnabled()); }
                 catch (Exception ex) { Notify("Kapeyn", "Couldn't change the startup setting: " + ex.Message); }
@@ -569,12 +599,42 @@ namespace Kapeyn
             m.Items.Add(Item("Command line...", delegate { ShowCliHelp(); }));
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(Item("Exit", delegate { Exit(); }));
+            KeepOpenOnStickyClicks(m);
             return m;
+        }
+
+        /// A menu item whose click changes a setting and leaves the menu open, so you can change several in a row.
+        ToolStripMenuItem Sticky(string text, Action change)
+        {
+            var it = new ToolStripMenuItem(text, null, delegate { change(); RefreshMenu(); });
+            stickyItems.Add(it);
+            return it;
+        }
+
+        // Clicking an item closes every open menu level with reason ItemClicked. For sticky items, cancel that
+        // on each level (root and submenus) so the whole menu stays where it is.
+        void KeepOpenOnStickyClicks(ToolStripDropDown dropDown)
+        {
+            dropDown.ItemClicked += delegate(object s, ToolStripItemClickedEventArgs e)
+            {
+                if (!stickyItems.Contains(e.ClickedItem)) return;
+                keepMenuOpen = true;
+                invoker.BeginInvoke(new Action(delegate { keepMenuOpen = false; }));
+            };
+            dropDown.Closing += delegate(object s, ToolStripDropDownClosingEventArgs e)
+            {
+                if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked && keepMenuOpen) e.Cancel = true;
+            };
+            foreach (ToolStripItem i in dropDown.Items)
+            {
+                var mi = i as ToolStripMenuItem;
+                if (mi != null && mi.HasDropDownItems) KeepOpenOnStickyClicks(mi.DropDown);
+            }
         }
 
         void AddMethod(string label, NudgeMethod method)
         {
-            var item = Item(label, delegate { settings.Method = method; Changed(); });
+            var item = Sticky(label, delegate { settings.Method = method; Changed(); });
             item.Tag = method;
             methodMenu.DropDownItems.Add(item);
         }
@@ -621,12 +681,7 @@ namespace Kapeyn
                 ? "While these apps are open"
                 : "While these apps are open (" + settings.WatchApps.Count + ")";
             scheduleItem.Checked = settings.ScheduleEnabled;
-            scheduleItem.Text = "During work hours (" + Format.Days(settings.ScheduleDays) + ", " +
-                                Format.Hour(settings.ScheduleStart) + " - " + Format.Hour(settings.ScheduleEnd) + ")";
-            foreach (ToolStripMenuItem d in daysMenu.DropDownItems) d.Checked = (settings.ScheduleDays & (1 << (int)d.Tag)) != 0;
-            foreach (ToolStripMenuItem s in startMenu.DropDownItems) s.Checked = (int)s.Tag == settings.ScheduleStart;
-            foreach (ToolStripMenuItem e in endMenu.DropDownItems) e.Checked = (int)e.Tag == settings.ScheduleEnd;
-            endOffItem.Checked = settings.ScheduleEndTurnsOff;
+            scheduleItem.Text = "During work hours (" + Format.Schedule(settings) + ")";
 
             screenItem.Checked = settings.KeepScreenOn;
             activityItem.Checked = settings.SimulateActivity;
@@ -657,6 +712,18 @@ namespace Kapeyn
             bool startup = false;
             try { startup = Startup.IsEnabled(); } catch { }
             startupItem.Checked = startup;
+        }
+
+        void ShowWorkHours()
+        {
+            using (var f = new WorkHoursForm(settings))
+            {
+                if (f.ShowDialog() != DialogResult.OK) return;
+            }
+            settings.Save();
+            // New times: start from where we are now, so saving never counts as "work hours just ended".
+            wasInWorkHours = Triggers.InWorkHours(settings, DateTime.Now);
+            Evaluate(false);
         }
 
         void ShowDoctor()

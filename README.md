@@ -3,7 +3,7 @@
 Kapeyn keeps your computer awake, and is smart about it. It's a tiny tray / menu bar app for **Windows** and **macOS** that needs no admin rights.
 
 - **Click the cup** to turn it on or off. A steaming cup means awake; an outline means off. Or press **Ctrl+Alt+K** (Windows) / **⌃⌥K** (Mac) anywhere.
-- **Right-click** (on a Mac, also Control-click) for everything else.
+- **Right-click** (on a Mac, also Control-click) for everything else. On Windows, the menu stays open while you flip settings, so you can change several in a row.
 - Hover over the cup, or open the menu, to see *why* it's awake ("on a call", "running npm", "work hours") and when it last nudged.
 
 ## What it does
@@ -14,7 +14,7 @@ Kapeyn keeps your computer awake, and is smart about it. It's a tiny tray / menu
 | **Prevents screen lock & "Away"** | When you're idle, Kapeyn sends a tiny invisible input. That resets the idle timer behind company screen-lock policies and Teams/Slack "Away". |
 | **Lock doctor** | *Lock doctor: what locks my PC?* finds every timer that can lock, blank or sleep your machine, including ones set by your company. It checks each one is covered, runs a self-test, and gives a verdict. |
 | **Auto timing** | Nudge timing defaults to **Auto**: half of the shortest lock timer the doctor finds (between 30 s and 4 min), so it's never too late. |
-| **Keep awake automatically** | Stays awake while you're **on a call** (microphone in use), while **downloading or streaming**, while **chosen apps are open**, or during **work hours** (pick the days and times). It can also turn itself off when work hours end. |
+| **Keep awake automatically** | Stays awake while you're **on a call** (microphone in use), while **downloading or streaming**, while **chosen apps are open**, or during **work hours**. *Set work hours…* takes any start and end time, including overnight shifts like 10 PM – 6 AM. When work hours end, Kapeyn can turn itself off, and optionally **lock** or **shut down** the computer (both off by default). Shutdown gives you 60 seconds to cancel, and apps with unsaved work can still stop it. |
 | **`kapeyn` command** | `kapeyn on 2h`, `kapeyn off`, `kapeyn status`, `kapeyn doctor`, and `kapeyn run npm run build`, which keeps the machine awake exactly as long as the command runs. |
 | **Knows when to stop** | Lets the screen turn off when *you* lock the machine. Pauses on low battery (click the cup to override). If you turn it off during a call or download, it stays off until that ends. |
 | **One copy only** | Launching it again just turns the running copy on. |

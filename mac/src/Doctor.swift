@@ -195,16 +195,23 @@ enum Format {
         return h == 1 ? "1 hour" : "\(h) hours"
     }
 
-    static func hour(_ hour: Int) -> String {
-        if hour == 24 { return "midnight" }
+    /// Minutes after midnight -> "9:00 AM" (in the user's own format).
+    static func timeOfDay(_ minutes: Int) -> String {
+        let m = ((minutes % 1440) + 1440) % 1440
         var c = DateComponents()
-        c.hour = hour
-        c.minute = 0
-        guard let date = Calendar.current.date(from: c) else { return "\(hour):00" }
+        c.hour = m / 60
+        c.minute = m % 60
+        guard let date = Calendar.current.date(from: c) else { return String(format: "%d:%02d", m / 60, m % 60) }
         let f = DateFormatter()
         f.timeStyle = .short
         f.dateStyle = .none
         return f.string(from: date)
+    }
+
+    /// "Mon-Fri, 9:00 AM - 5:00 PM" (adds "next day" for overnight hours).
+    static func schedule(_ s: Settings) -> String {
+        return "\(days(s.scheduleDays)), \(timeOfDay(s.scheduleStartMin)) - \(timeOfDay(s.scheduleEndMin))"
+            + (s.scheduleEndMin < s.scheduleStartMin ? " (next day)" : "")
     }
 
     static func ago(_ date: Date) -> String {

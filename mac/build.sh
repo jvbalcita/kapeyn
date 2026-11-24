@@ -45,8 +45,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key>         <string>Kapeyn</string>
     <key>CFBundleIconFile</key>           <string>Kapeyn</string>
     <key>CFBundlePackageType</key>        <string>APPL</string>
-    <key>CFBundleShortVersionString</key> <string>2.0</string>
-    <key>CFBundleVersion</key>            <string>2</string>
+    <key>CFBundleShortVersionString</key> <string>2.1</string>
+    <key>CFBundleVersion</key>            <string>3</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Kapeyn uses System Events to shut down your Mac when work hours end, only if you turned that on.</string>
     <key>LSMinimumSystemVersion</key>     <string>12.0</string>
     <key>LSUIElement</key>                <true/>
     <key>NSAppSleepDisabled</key>         <true/>
