@@ -39,6 +39,7 @@ namespace Kapeyn
         // ---- state ---------------------------------------------------------------------------
         bool manualOn;
         DateTime? manualUntil;
+        int? manualMinutes; // the "Keep awake for" choice, to show it checked in the menu
         readonly Dictionary<int, string> holds = new Dictionary<int, string>(); // kapeyn run: pid -> label
         readonly HashSet<string> snoozed = new HashSet<string>();               // auto reasons the user turned off
         List<Reason> lastAuto = new List<Reason>();
@@ -116,7 +117,8 @@ namespace Kapeyn
                 settings.Save();
                 if (!cliLaunch)
                     Notify("Kapeyn is running",
-                        "Your PC will stay awake. Click the cup in the tray to turn it on/off, right-click for options, or press " + HotkeyText + ".");
+                        "Your PC will stay awake. Click the cup in the tray to turn it on/off, or press " + HotkeyText +
+                        ". Right-click it for options and Help.");
             }
         }
 
@@ -290,6 +292,7 @@ namespace Kapeyn
         {
             manualOn = true;
             manualUntil = minutes.HasValue ? DateTime.Now.AddMinutes(minutes.Value) : (DateTime?)null;
+            manualMinutes = minutes;
             snoozed.Clear();
             batteryOverride = paused || batteryOverride;
             lastNudge = DateTime.MinValue;
@@ -391,6 +394,9 @@ namespace Kapeyn
                     return "error: expected release <pid>";
                 case "doctor":
                     return Doctor.Report(settings, awake, StatusLine(), EffectiveNudgeSeconds, settings.NudgeSeconds == 0, true);
+                case "guide":
+                    invoker.BeginInvoke(new Action(delegate { ShowHelp(null); }));
+                    return "Opened the Kapeyn guide.";
                 default:
                     return "error: unknown command \"" + verb + "\"";
             }
@@ -504,12 +510,16 @@ namespace Kapeyn
             m.Items.Add(toggleItem);
 
             durationMenu = new ToolStripMenuItem("Keep awake for");
-            durationMenu.DropDownItems.Add(Item("Until I turn it off", delegate { TurnOn(null); }));
+            var untilOff = Item("Until I turn it off", delegate { TurnOn(null); });
+            untilOff.Tag = 0;
+            durationMenu.DropDownItems.Add(untilOff);
             durationMenu.DropDownItems.Add(new ToolStripSeparator());
             foreach (int minutes in DurationMinutes)
             {
                 int mins = minutes;
-                durationMenu.DropDownItems.Add(Item(Format.Minutes(mins), delegate { TurnOn(mins); }));
+                var it = Item(Format.Minutes(mins), delegate { TurnOn(mins); });
+                it.Tag = mins;
+                durationMenu.DropDownItems.Add(it);
             }
             m.Items.Add(durationMenu);
             m.Items.Add(new ToolStripSeparator());
@@ -596,7 +606,8 @@ namespace Kapeyn
             m.Items.Add(new ToolStripSeparator());
 
             m.Items.Add(Item("Lock doctor: what locks my PC?", delegate { ShowDoctor(); }));
-            m.Items.Add(Item("Command line...", delegate { ShowCliHelp(); }));
+            m.Items.Add(Item("Command line...", delegate { ShowHelp("Command line"); }));
+            m.Items.Add(Item("Help", delegate { ShowHelp(null); }));
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add(Item("Exit", delegate { Exit(); }));
             KeepOpenOnStickyClicks(m);
@@ -675,6 +686,25 @@ namespace Kapeyn
             toggleItem.Text = awake ? "Turn off" : "Turn on";
             toggleItem.ShortcutKeyDisplayString = settings.Hotkey && hotkeyOk ? HotkeyText : "";
 
+            // Keep awake for: check the current choice; a timed one also shows the time left.
+            foreach (ToolStripItem i in durationMenu.DropDownItems)
+            {
+                var mi = i as ToolStripMenuItem;
+                if (mi == null) continue;
+                int minutes = (int)mi.Tag;
+                bool current = manualOn && (minutes == 0
+                    ? !manualUntil.HasValue
+                    : manualUntil.HasValue && manualMinutes == minutes);
+                mi.Checked = current;
+                string label = minutes == 0 ? "Until I turn it off" : Format.Minutes(minutes);
+                mi.Text = current && minutes > 0
+                    ? label + "  (" + Format.Remaining(manualUntil.Value - DateTime.Now) + " left)"
+                    : label;
+            }
+            durationMenu.Text = manualOn && manualUntil.HasValue
+                ? "Keep awake for (" + Format.Remaining(manualUntil.Value - DateTime.Now) + " left)"
+                : "Keep awake for";
+
             callItem.Checked = settings.WhileCall;
             netItem.Checked = settings.WhileDownloading;
             appsMenu.Text = settings.WatchApps.Count == 0
@@ -733,17 +763,23 @@ namespace Kapeyn
             using (var f = new ReportForm("Kapeyn Lock Doctor", report)) f.ShowDialog();
         }
 
-        void ShowCliHelp()
+        HelpForm helpWindow;
+
+        /// Opens the guide (one window; brings it to the front if it's already open).
+        void ShowHelp(string topic)
         {
-            string dir = Path.GetDirectoryName(Application.ExecutablePath);
-            bool installed = File.Exists(Path.Combine(dir, "kapeyn.com"));
-            string text =
-                "Control Kapeyn from PowerShell or Command Prompt:\n\n" + Cli.HelpText + "\n" +
-                (installed
-                    ? "The kapeyn command is installed next to Kapeyn.exe (" + dir + ").\n" +
-                      "If \"kapeyn\" isn't found, open a new terminal window, or run install.ps1 to add it to your PATH."
-                    : "To get the kapeyn command, download Kapeyn-Windows.zip from the Releases page and run install.ps1.");
-            using (var f = new ReportForm("Kapeyn command line", text)) f.ShowDialog();
+            if (helpWindow == null || helpWindow.IsDisposed)
+            {
+                helpWindow = new HelpForm(topic ?? "Getting started");
+                helpWindow.FormClosed += delegate { helpWindow.Dispose(); helpWindow = null; };
+                helpWindow.Show();
+            }
+            else
+            {
+                helpWindow.ShowTopic(topic);
+                if (helpWindow.WindowState == FormWindowState.Minimized) helpWindow.WindowState = FormWindowState.Normal;
+            }
+            helpWindow.Activate();
         }
     }
 
