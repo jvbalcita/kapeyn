@@ -171,5 +171,40 @@ namespace Kapeyn
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool LockWorkStation();
+
+        // ---- real file paths (through symbolic links) ------------------------------------------
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share,
+            IntPtr security, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern uint GetFinalPathNameByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle file,
+            System.Text.StringBuilder path, uint length, uint flags);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.I1)] // returns a 1-byte BOOLEAN, not a 4-byte BOOL
+        public static extern bool CreateSymbolicLink(string link, string target, uint flags);
+
+        /// The real location of a file, following symbolic links (winget runs portable apps through
+        /// links in its own folder). Returns the path unchanged if it can't be resolved.
+        public static string RealPath(string path)
+        {
+            try
+            {
+                using (var h = CreateFile(path, 0, 7 /* share all */, IntPtr.Zero, 3 /* OPEN_EXISTING */,
+                                          0x02000000 /* FILE_FLAG_BACKUP_SEMANTICS */, IntPtr.Zero))
+                {
+                    if (h.IsInvalid) return path;
+                    var sb = new System.Text.StringBuilder(1024);
+                    uint n = GetFinalPathNameByHandle(h, sb, (uint)sb.Capacity, 0);
+                    if (n == 0 || n >= sb.Capacity) return path;
+                    string s = sb.ToString();
+                    if (s.StartsWith(@"\\?\UNC\")) return @"\\" + s.Substring(8);
+                    if (s.StartsWith(@"\\?\")) return s.Substring(4);
+                    return s;
+                }
+            }
+            catch { return path; }
+        }
     }
 }

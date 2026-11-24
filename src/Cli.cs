@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -72,9 +73,9 @@ namespace Kapeyn
             string reply;
             if (IpcClient.TrySend(command, 500, out reply)) return reply;
 
-            string exe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Kapeyn.exe");
-            if (!File.Exists(exe))
-                throw new ApplicationException("Kapeyn isn't running and Kapeyn.exe wasn't found next to kapeyn.com.");
+            string exe = FindApp();
+            if (exe == null)
+                throw new ApplicationException("Kapeyn isn't running and Kapeyn.exe couldn't be found. Reinstall Kapeyn, or start it from the Start menu.");
             Process.Start(new ProcessStartInfo(exe, "--cli-launch") { UseShellExecute = true });
 
             for (int i = 0; i < 40; i++)
@@ -83,6 +84,31 @@ namespace Kapeyn
                 if (IpcClient.TrySend(command, 500, out reply)) return reply;
             }
             throw new ApplicationException("Kapeyn is running but didn't answer. If an older version is running, exit it from the tray and try again.");
+        }
+
+        /// Where Kapeyn.exe is: next to this command's real file (following winget's link), then the usual
+        /// install folders. Returns null if it isn't found.
+        public static string FindApp()
+        {
+            var candidates = new List<string>();
+            try
+            {
+                string self = Native.RealPath(Process.GetCurrentProcess().MainModule.FileName);
+                candidates.Add(Path.Combine(Path.GetDirectoryName(self), "Kapeyn.exe"));
+            }
+            catch { }
+            candidates.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Kapeyn.exe"));
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            candidates.Add(Path.Combine(local, @"Programs\Kapeyn\Kapeyn.exe"));
+            try
+            {
+                string winget = Path.Combine(local, @"Microsoft\WinGet\Packages");
+                if (Directory.Exists(winget))
+                    foreach (string dir in Directory.GetDirectories(winget, "JVBalcita.Kapeyn*"))
+                        candidates.Add(Path.Combine(dir, "Kapeyn.exe"));
+            }
+            catch { }
+            return candidates.FirstOrDefault(File.Exists);
         }
 
         static int RunCommand(string[] cmd)

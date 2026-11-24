@@ -30,11 +30,24 @@ jobs:
         run: |
           .\dist\kapeyn.com help
           if ($LASTEXITCODE -ne 0) { throw "kapeyn help failed" }
+      - name: Run kapeyn through a symbolic link (how winget installs it)
+        shell: powershell
+        run: |
+          $links = Join-Path $env:RUNNER_TEMP 'Links'
+          New-Item -ItemType Directory $links | Out-Null
+          New-Item -ItemType SymbolicLink -Path "$links\kapeyn.exe" -Target "$PWD\dist\kapeyn-cli.exe" | Out-Null
+          Get-Process Kapeyn -ErrorAction SilentlyContinue | Stop-Process -Force
+          & "$links\kapeyn.exe" status     # the app isn't running, so the command has to find and start it
+          if ($LASTEXITCODE -ne 0) { throw "kapeyn via a link couldn't start the app" }
+          $app = (Get-Process Kapeyn).Path
+          "app started from: $app"
+          if ($app -ne "$PWD\dist\Kapeyn.exe") { throw "started the wrong Kapeyn.exe" }
+          Stop-Process -Name Kapeyn -Force
       - name: Zip (app + command + installer)
         shell: pwsh
         run: |
           New-Item -ItemType Directory pkg | Out-Null
-          Copy-Item dist\Kapeyn.exe, dist\kapeyn.com, install.ps1, README.md, LICENSE pkg\
+          Copy-Item dist\Kapeyn.exe, dist\kapeyn.com, dist\kapeyn-cli.exe, install.ps1, README.md, LICENSE pkg\
           Compress-Archive -Path pkg\* -DestinationPath Kapeyn-Windows.zip
           Copy-Item dist\Kapeyn.exe .   # keep both files at the artifact's top level
       - uses: actions/upload-artifact@v4

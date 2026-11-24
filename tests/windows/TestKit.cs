@@ -63,6 +63,7 @@ namespace Kapeyn.Tests
             T.Run("Download detection", NetMonitorTests.Run);
             T.Run("Lock doctor: auto nudge timing", DoctorTests.Run);
             T.Run("Help guide", HelpTests.Run);
+            T.Run("Finding the app through links (winget)", PathTests.Run);
 
             Console.WriteLine();
             Console.ForegroundColor = T.Failed == 0 ? ConsoleColor.Green : ConsoleColor.Red;
