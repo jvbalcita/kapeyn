@@ -13,15 +13,23 @@ Kapeyn keeps your computer awake. It's a tiny tray / menu bar app for **Windows*
 
 ---
 
+## Download
+
+Get the latest **`Kapeyn.exe`** (Windows) or **`Kapeyn-macOS.zip`** (Mac) from the [Releases page](https://github.com/jvbalcita/kapeyn/releases/latest). Download instructions are on that page. Both are built automatically from this source code by GitHub Actions (`.github/workflows/release.yml`).
+
+To publish a new version, push a tag: `git tag v1.0.1` then `git push origin v1.0.1`.
+
+---
+
 ## Windows
 
-**Install** (copies it to `%LOCALAPPDATA%\Programs\Kapeyn`, adds a Start menu shortcut, starts it at sign-in, and starts it now):
+**Install from source** (builds it, copies it to `%LOCALAPPDATA%\Programs\Kapeyn`, adds a Start menu shortcut, starts it at sign-in, and starts it now):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Uninstall: `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall`. You can also just double-click `dist\Kapeyn.exe`.
+Uninstall: `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall`. Or just double-click a downloaded `Kapeyn.exe`.
 
 On Windows 11 the icon may be hidden behind the **^** on the taskbar. Drag it onto the taskbar to keep it visible.
 
@@ -35,8 +43,10 @@ On Windows 11 the icon may be hidden behind the **^** on the taskbar. Drag it on
 
 ## macOS
 
-1. Copy `dist/Kapeyn-mac.zip` to the Mac and unzip it. You can also copy the `mac` folder directly.
-2. Open **Terminal** in the unzipped `mac` folder and run:
+The quickest option is the download from the Releases page. If you'd rather avoid Apple's "unverified app" prompt, build it on your Mac instead:
+
+1. Download this repository (Code → Download ZIP, or `git clone`).
+2. Open **Terminal** in its `mac` folder and run:
 
    ```bash
    bash install.sh

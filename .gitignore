@@ -1,5 +1,6 @@
 # build intermediates
 obj/
+dist/
 mac/obj/
 mac/dist/
 .claude/
