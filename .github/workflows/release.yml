@@ -17,13 +17,26 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build Kapeyn.exe
+      - name: Build Kapeyn.exe and kapeyn.com
         shell: powershell
         run: .\build.ps1
+      - name: Check the command-line tool
+        shell: powershell
+        run: |
+          .\dist\kapeyn.com help
+          if ($LASTEXITCODE -ne 0) { throw "kapeyn help failed" }
+      - name: Zip (app + command + installer)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory pkg | Out-Null
+          Copy-Item dist\Kapeyn.exe, dist\kapeyn.com, install.ps1, README.md pkg\
+          Compress-Archive -Path pkg\* -DestinationPath Kapeyn-Windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/Kapeyn.exe
+          path: |
+            dist/Kapeyn.exe
+            Kapeyn-Windows.zip
 
   macos:
     runs-on: macos-latest
@@ -36,6 +49,18 @@ jobs:
           lipo -info mac/dist/Kapeyn.app/Contents/MacOS/Kapeyn
           codesign --verify --verbose mac/dist/Kapeyn.app
           plutil -lint mac/dist/Kapeyn.app/Contents/Info.plist
+      - name: Smoke test (launch the app and drive it with the kapeyn command)
+        continue-on-error: true
+        run: |
+          K=mac/dist/Kapeyn.app/Contents/MacOS/Kapeyn
+          "$K" help
+          "$K" on 1h
+          "$K" status
+          pmset -g assertions | grep -i kapeyn
+          "$K" run sleep 3 && echo "kapeyn run: ok"
+          "$K" doctor
+          "$K" off
+          "$K" status
       - name: Zip
         run: ditto -c -k --keepParent mac/dist/Kapeyn.app Kapeyn-macOS.zip
       - uses: actions/upload-artifact@v4
@@ -56,15 +81,18 @@ jobs:
         with:
           files: |
             assets/Kapeyn.exe
+            assets/Kapeyn-Windows.zip
             assets/Kapeyn-macOS.zip
           body: |
             Kapeyn keeps your computer awake. Click the coffee cup to turn it on or off; right-click it for options.
 
             ## Download
 
-            **Windows 10/11:** `Kapeyn.exe`. Double-click it to run; no install is needed.
+            **Windows 10/11, the easy way:** `Kapeyn.exe`. Double-click it to run; no install is needed.
             The app isn't code-signed yet, so the first time SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
-            To have it start when you sign in, right-click the cup and choose **Start with Windows**.
+
+            **Windows 10/11, with the `kapeyn` command:** `Kapeyn-Windows.zip`. Unzip it, right-click `install.ps1`, and choose **Run with PowerShell**.
+            This installs the app, starts it at sign-in, and adds the `kapeyn` command (`kapeyn on 2h`, `kapeyn run <command>`, `kapeyn doctor`).
 
             **macOS 12+ (Apple silicon & Intel):** `Kapeyn-macOS.zip`. Unzip it and drag **Kapeyn** to Applications.
             The app isn't notarized by Apple yet, so the first launch is blocked. Open **System Settings → Privacy & Security** and click **Open Anyway**.

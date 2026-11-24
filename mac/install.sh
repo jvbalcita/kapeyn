@@ -20,6 +20,7 @@ sleep 0.5
 if [[ "${1:-}" == "--uninstall" ]]; then
     rm -f "$AGENT"
     rm -rf "$DEST"
+    if [ -L /usr/local/bin/kapeyn ]; then rm -f /usr/local/bin/kapeyn 2>/dev/null || echo "Remove the command with: sudo rm /usr/local/bin/kapeyn"; fi
     echo "Kapeyn uninstalled. (Settings remain; remove with:  defaults delete com.kapeyn.Kapeyn)"
     exit 0
 fi
@@ -49,6 +50,13 @@ cat > "$AGENT" <<PLIST
 </plist>
 PLIST
 
+# The "kapeyn" command: link it into /usr/local/bin when that's writable without a password.
+CMD_NOTE="To use the kapeyn command, choose \"Command line...\" in Kapeyn's menu and click Install command."
+if mkdir -p /usr/local/bin 2>/dev/null && [ -w /usr/local/bin ]; then
+    ln -sf "$DEST/Contents/MacOS/Kapeyn" /usr/local/bin/kapeyn
+    CMD_NOTE="Try the command: kapeyn status"
+fi
+
 open "$DEST"
 echo "Kapeyn installed to $DEST and started. It will also start automatically when you log in."
-echo "Look for the coffee cup in the menu bar."
+echo "Look for the coffee cup in the menu bar. $CMD_NOTE"
