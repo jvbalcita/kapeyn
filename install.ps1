@@ -116,6 +116,9 @@ function Install-Kapeyn([bool]$Uninstall, [string]$Version, [string]$ScriptDir) 
     $lnk.Description = 'Keep your PC awake'
     $lnk.Save()
 
+    # A brand-new Windows account may not have the Run key yet. Create it only when missing:
+    # New-Item -Force on an existing key would wipe other apps' start-at-sign-in entries.
+    if (-not (Test-Path $runKey)) { New-Item -Path $runKey | Out-Null }
     Set-ItemProperty -Path $runKey -Name 'Kapeyn' -Value "`"$target`""
     if (Test-Path (Join-Path $installDir 'kapeyn.com')) { Set-UserPath $true }
 
