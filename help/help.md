@@ -51,7 +51,7 @@ Need your {computer} awake only for a meeting, a presentation or a long download
 2. Choose **Keep awake for**.
 3. Pick a time: **15 minutes**, **30 minutes**, **1 hour**, **2 hours**, **4 hours** or **8 hours**.
 
-Kapeyn shows the time left (hover over the cup) and switches off by itself when the time is up.
+Your choice gets a **check mark** and shows the time left, for example "1 hour (42 min left)". You can also hover over the cup to see it. Kapeyn switches off by itself when the time is up. Pick another time at any point to restart the countdown.
 
 ## Other ways
 - **Until I turn it off:** the same submenu, or just click the cup.
