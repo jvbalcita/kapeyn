@@ -179,10 +179,15 @@ Control Kapeyn from a terminal. The command is `kapeyn`.
 - `kapeyn help` lists the commands.
 
 ## Get the command
-[win] - If you installed Kapeyn with **install.ps1** (from Kapeyn-Windows.zip), the command is ready. Open a **new** PowerShell or Command Prompt window and type `kapeyn`.
-[win] - If you only downloaded **Kapeyn.exe**, download **Kapeyn-Windows.zip** from the Releases page and run **install.ps1**.
-[mac] - If you installed with `bash install.sh`, the command is usually ready. Open a new Terminal window and type `kapeyn`.
+[win] - If you installed Kapeyn with the one-line install or **install.ps1**, the command is ready. Open a **new** PowerShell or Command Prompt window and type `kapeyn`.
+[win] - If you only downloaded **Kapeyn.exe**, install it properly by pasting this into PowerShell:
+[win] `irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 | iex`
+[mac] - If you installed with Homebrew, the one-line install or `bash install.sh`, the command is usually ready. Open a new Terminal window and type `kapeyn`.
 [mac] - Otherwise, choose **Command line...** in Kapeyn's menu and click **Install command**. macOS asks for your password once.
+
+## Update Kapeyn
+[win] Run the one-line install again. It replaces the app and keeps your settings.
+[mac] Run the one-line install again, or `brew upgrade kapeyn` if you used Homebrew. Your settings are kept. Afterwards, allow Kapeyn again under **Privacy & Security > Accessibility** if you use the mouse nudge.
 
 If Kapeyn isn't running, the command starts it for you.
 
@@ -227,7 +232,7 @@ Hover over the cup: it says why, for example "on a call" or "downloading". Turn 
 - it paused because the **battery is low** (the cup shows why). Click the cup to keep it on anyway.
 
 ## The kapeyn command isn't found
-[win] Open a **new** terminal window after installing. If it's still missing, run **install.ps1** from Kapeyn-Windows.zip again.
+[win] Open a **new** terminal window after installing. If it's still missing, run the one-line install again (see **Command line**).
 [mac] Choose **Command line...** in the menu and click **Install command**, then open a new Terminal window.
 
 [mac] ## My MacBook still sleeps when I close the lid
