@@ -54,12 +54,16 @@ namespace Kapeyn
             get { return Path.Combine(FolderPath, "settings.ini"); }
         }
 
-        public static Settings Load()
+        public static Settings Load() { return LoadFrom(FilePath); }
+
+        public void Save() { SaveTo(FilePath); }
+
+        public static Settings LoadFrom(string path)
         {
             var s = new Settings();
             try
             {
-                if (!File.Exists(FilePath))
+                if (!File.Exists(path))
                 {
                     s.FirstRun = true;
                     return s;
@@ -67,7 +71,7 @@ namespace Kapeyn
                 int version = 1;
                 int oldStartHour = -1, oldEndHour = -1;
                 bool haveStartMin = false, haveEndMin = false;
-                foreach (string raw in File.ReadAllLines(FilePath))
+                foreach (string raw in File.ReadAllLines(path))
                 {
                     int eq = raw.IndexOf('=');
                     if (eq <= 0) continue;
@@ -118,12 +122,12 @@ namespace Kapeyn
             return s;
         }
 
-        public void Save()
+        public void SaveTo(string path)
         {
             try
             {
-                Directory.CreateDirectory(FolderPath);
-                File.WriteAllLines(FilePath, new[]
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllLines(path, new[]
                 {
                     "Version=" + CurrentVersion,
                     "StartActive=" + StartActive,

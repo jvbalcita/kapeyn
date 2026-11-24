@@ -44,6 +44,7 @@ A tiny tray / menu bar app for Windows and macOS that stops sleep, screen lock a
 - [Configuration reference](#configuration-reference)
 - [Troubleshooting](#troubleshooting)
 - [Build from source](#build-from-source)
+- [Testing](#testing)
 - [Project structure](#project-structure)
 - [Releasing](#releasing)
 - [Contributing](#contributing)
@@ -444,21 +445,51 @@ This builds a universal `mac/dist/Kapeyn.app` (Apple silicon + Intel), ad-hoc si
 
 </details>
 
+## Testing
+
+Both apps have automated test suites that run on every push and pull request. A failing test blocks merging and releases.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\test.ps1     # Windows
+```
+
+```bash
+bash mac/tests/run.sh                                     # macOS
+```
+
+The suites need no extra tools. Each uses a tiny built-in runner compiled with the same compiler as the app. They cover:
+
+| Area | What's checked |
+|---|---|
+| **Engine** | On/off, timed sessions and their end, automatic reasons, snoozing ("off" during a call), `kapeyn run` holds, status text. |
+| **Work hours** | Boundaries to the minute, overnight shifts, midnight, day selection. End of work hours fires once and only when seen live: never after sleep, saving new hours, or switching the schedule off. Lock vs shutdown. |
+| **Battery** | Pause below the limit, one notice per pause, click-to-override, reset on plugging in, "Never". |
+| **Settings** | Defaults, save/load round trip, migrations from older versions, invalid values ignored. |
+| **Downloads** | One-off bursts ignored, sustained traffic detected, one-minute hold, counter resets and 32-bit wraps. |
+| **Lock doctor** | Auto nudge timing from the lock timers found. |
+| **Command line** | Duration parsing (`45m`, `2h`, `1h30m`, `1 hour 30 minutes`…) and rejections. |
+| **Help guide** | Every topic present and filled in, no leftover tokens, and each platform sees only its own wording. |
+
+The decision logic lives in a UI-free `Engine` (`src/Engine.cs`, `mac/src/Engine.swift`) that both apps feed with what's happening, so its behavior can be tested exactly.
+
 ## Project structure
 
 ```text
 kapeyn/
 ├── src/                    Windows app (C#, .NET Framework 4.x)
 │   ├── Program.cs          entry point; tray app or CLI build
-│   ├── TrayApp.cs          engine (reasons → awake), tray icon and menu
+│   ├── Engine.cs           decision logic (reasons → awake), no UI; fully tested
+│   ├── TrayApp.cs          gathers inputs for the engine, tray icon and menu
 │   ├── Triggers.cs         work hours, calls, downloads, watched apps, battery
 │   ├── Doctor.cs           Lock doctor and report window
 │   ├── WorkHours.cs        work hours window and shutdown countdown
 │   ├── Help.cs             built-in Help window
 │   ├── Cli.cs / Ipc.cs     kapeyn command and named-pipe link to the app
 │   └── Native.cs …         Win32 calls, settings, icon drawing
+├── tests/windows/          Windows test suite (run: test.ps1)
 ├── mac/
 │   ├── src/                macOS app (Swift, AppKit), same structure
+│   ├── tests/              macOS test suite (run: bash mac/tests/run.sh)
 │   ├── build.sh            builds the universal Kapeyn.app
 │   └── install.sh          installs for the current user
 ├── help/help.md            the in-app guide (shared by both apps)
@@ -485,7 +516,7 @@ Issues and pull requests are welcome. By contributing, you agree that your contr
 
 1. Branch from `main`.
 2. Keep Windows and macOS behaviour in step. A feature usually touches `src/` and `mac/src/`, plus `help/help.md` and this README.
-3. Run `build.ps1` and/or `mac/build.sh` locally. CI must be green before merging.
+3. Run the tests (`test.ps1` / `bash mac/tests/run.sh`) and the builds locally. Add tests for new behavior, ideally in both suites. CI must be green before merging.
 4. Write help text in plain, friendly language. Use `[win] ` / `[mac] ` line prefixes for platform-specific lines.
 
 ## Responsible use
