@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: state
     var manualOn = false
     var manualUntil: Date?
+    var manualMinutes: Int?               // the "Keep awake for" choice, to show it checked in the menu
     var holds: [Int32: String] = [:]      // kapeyn run: pid -> label
     var snoozed = Set<String>()           // automatic reasons the user turned off
     var lastAuto: [Reason] = []
@@ -52,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var detailLine: NSMenuItem!
     var toggleItem: NSMenuItem!
     let durationMenu = NSMenu()
+    var durationItem: NSMenuItem!
     var callItem: NSMenuItem!
     var netItem: NSMenuItem!
     var appsItem: NSMenuItem!
@@ -259,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func turnOn(_ minutes: Int?) {
         manualOn = true
         manualUntil = minutes.map { Date().addingTimeInterval(Double($0) * 60) }
+        manualMinutes = minutes
         snoozed.removeAll()
         batteryOverride = batteryOverride || paused
         lastNudge = .distantPast
@@ -465,7 +468,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         durationMenu.addItem(item("Until I turn it off", #selector(pickDuration(_:)), tag: 0))
         durationMenu.addItem(.separator())
         for m in durations { durationMenu.addItem(item(Format.minutes(m), #selector(pickDuration(_:)), tag: m)) }
-        menu.addItem(submenu("Keep awake for", durationMenu))
+        durationItem = submenu("Keep awake for", durationMenu)
+        menu.addItem(durationItem)
         menu.addItem(.separator())
 
         // Automatic
@@ -532,6 +536,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         detailLine.title = detail ?? ""
         detailLine.isHidden = detail == nil
         toggleItem.title = (awake ? "Turn off" : "Turn on") + (settings.hotkey && hotKeyOK ? "   \(hotkeyText)" : "")
+
+        // Keep awake for: check the current choice; a timed one also shows the time left.
+        let left = manualUntil.map { Format.remaining($0.timeIntervalSinceNow) + " left" }
+        for i in durationMenu.items where !i.isSeparatorItem {
+            let current = manualOn && (i.tag == 0 ? manualUntil == nil : manualUntil != nil && manualMinutes == i.tag)
+            i.state = current ? .on : .off
+            let label = i.tag == 0 ? "Until I turn it off" : Format.minutes(i.tag)
+            i.title = current && i.tag > 0 ? "\(label)  (\(left ?? ""))" : label
+        }
+        durationItem.title = manualOn && left != nil ? "Keep awake for (\(left!))" : "Keep awake for"
 
         callItem.state = settings.whileCall ? .on : .off
         netItem.state = settings.whileDownloading ? .on : .off

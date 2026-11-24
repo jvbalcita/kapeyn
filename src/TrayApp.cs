@@ -39,6 +39,7 @@ namespace Kapeyn
         // ---- state ---------------------------------------------------------------------------
         bool manualOn;
         DateTime? manualUntil;
+        int? manualMinutes; // the "Keep awake for" choice, to show it checked in the menu
         readonly Dictionary<int, string> holds = new Dictionary<int, string>(); // kapeyn run: pid -> label
         readonly HashSet<string> snoozed = new HashSet<string>();               // auto reasons the user turned off
         List<Reason> lastAuto = new List<Reason>();
@@ -291,6 +292,7 @@ namespace Kapeyn
         {
             manualOn = true;
             manualUntil = minutes.HasValue ? DateTime.Now.AddMinutes(minutes.Value) : (DateTime?)null;
+            manualMinutes = minutes;
             snoozed.Clear();
             batteryOverride = paused || batteryOverride;
             lastNudge = DateTime.MinValue;
@@ -508,12 +510,16 @@ namespace Kapeyn
             m.Items.Add(toggleItem);
 
             durationMenu = new ToolStripMenuItem("Keep awake for");
-            durationMenu.DropDownItems.Add(Item("Until I turn it off", delegate { TurnOn(null); }));
+            var untilOff = Item("Until I turn it off", delegate { TurnOn(null); });
+            untilOff.Tag = 0;
+            durationMenu.DropDownItems.Add(untilOff);
             durationMenu.DropDownItems.Add(new ToolStripSeparator());
             foreach (int minutes in DurationMinutes)
             {
                 int mins = minutes;
-                durationMenu.DropDownItems.Add(Item(Format.Minutes(mins), delegate { TurnOn(mins); }));
+                var it = Item(Format.Minutes(mins), delegate { TurnOn(mins); });
+                it.Tag = mins;
+                durationMenu.DropDownItems.Add(it);
             }
             m.Items.Add(durationMenu);
             m.Items.Add(new ToolStripSeparator());
@@ -679,6 +685,25 @@ namespace Kapeyn
             detailItem.Visible = detail != null;
             toggleItem.Text = awake ? "Turn off" : "Turn on";
             toggleItem.ShortcutKeyDisplayString = settings.Hotkey && hotkeyOk ? HotkeyText : "";
+
+            // Keep awake for: check the current choice; a timed one also shows the time left.
+            foreach (ToolStripItem i in durationMenu.DropDownItems)
+            {
+                var mi = i as ToolStripMenuItem;
+                if (mi == null) continue;
+                int minutes = (int)mi.Tag;
+                bool current = manualOn && (minutes == 0
+                    ? !manualUntil.HasValue
+                    : manualUntil.HasValue && manualMinutes == minutes);
+                mi.Checked = current;
+                string label = minutes == 0 ? "Until I turn it off" : Format.Minutes(minutes);
+                mi.Text = current && minutes > 0
+                    ? label + "  (" + Format.Remaining(manualUntil.Value - DateTime.Now) + " left)"
+                    : label;
+            }
+            durationMenu.Text = manualOn && manualUntil.HasValue
+                ? "Keep awake for (" + Format.Remaining(manualUntil.Value - DateTime.Now) + " left)"
+                : "Keep awake for";
 
             callItem.Checked = settings.WhileCall;
             netItem.Checked = settings.WhileDownloading;
