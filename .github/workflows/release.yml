@@ -31,11 +31,12 @@ jobs:
           New-Item -ItemType Directory pkg | Out-Null
           Copy-Item dist\Kapeyn.exe, dist\kapeyn.com, install.ps1, README.md pkg\
           Compress-Archive -Path pkg\* -DestinationPath Kapeyn-Windows.zip
+          Copy-Item dist\Kapeyn.exe .   # keep both files at the artifact's top level
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
-            dist/Kapeyn.exe
+            Kapeyn.exe
             Kapeyn-Windows.zip
 
   macos:
