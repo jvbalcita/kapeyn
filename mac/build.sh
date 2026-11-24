@@ -30,6 +30,8 @@ else
 fi
 cp "$OBJ/Kapeyn" "$APP/Contents/MacOS/Kapeyn"
 
+cp ../help/help.md "$APP/Contents/Resources/help.md" # the in-app guide, shared with Windows
+
 echo "Making icon..."
 "$OBJ/Kapeyn" --export-iconset "$OBJ/Kapeyn.iconset"
 iconutil -c icns "$OBJ/Kapeyn.iconset" -o "$APP/Contents/Resources/Kapeyn.icns"
@@ -45,8 +47,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key>         <string>Kapeyn</string>
     <key>CFBundleIconFile</key>           <string>Kapeyn</string>
     <key>CFBundlePackageType</key>        <string>APPL</string>
-    <key>CFBundleShortVersionString</key> <string>2.1</string>
-    <key>CFBundleVersion</key>            <string>3</string>
+    <key>CFBundleShortVersionString</key> <string>2.2.0</string>
+    <key>CFBundleVersion</key>            <string>4</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Kapeyn uses System Events to shut down your Mac when work hours end, only if you turned that on.</string>
     <key>LSMinimumSystemVersion</key>     <string>12.0</string>

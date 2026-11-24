@@ -10,6 +10,7 @@ if (-not (Test-Path $csc)) { throw "csc.exe not found. .NET Framework 4.x is req
 
 $src      = Get-ChildItem (Join-Path $root 'src') -Filter *.cs | ForEach-Object { $_.FullName }
 $manifest = Join-Path $root 'src\Kapeyn.manifest'
+$help     = Join-Path $root 'help\help.md'   # the in-app guide, shared with the Mac app
 $obj      = Join-Path $root 'obj'
 $dist     = Join-Path $root 'dist'
 $exe      = Join-Path $dist 'Kapeyn.exe'
@@ -19,7 +20,7 @@ New-Item -ItemType Directory -Force $obj, $dist | Out-Null
 $common = @('/nologo', '/optimize+', '/platform:anycpu',
             '/reference:System.dll', '/reference:System.Core.dll',
             '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll',
-            "/win32manifest:$manifest")
+            "/win32manifest:$manifest", "/resource:$help,Kapeyn.help.md")
 
 function Invoke-Csc([string[]]$extra) {
     & $csc @common @extra @src

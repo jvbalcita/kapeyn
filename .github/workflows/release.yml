@@ -50,6 +50,7 @@ jobs:
           lipo -info mac/dist/Kapeyn.app/Contents/MacOS/Kapeyn
           codesign --verify --verbose mac/dist/Kapeyn.app
           plutil -lint mac/dist/Kapeyn.app/Contents/Info.plist
+          test -s mac/dist/Kapeyn.app/Contents/Resources/help.md && echo "help guide bundled"
       - name: Smoke test (launch the app and drive it with the kapeyn command)
         continue-on-error: true
         run: |
