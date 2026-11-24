@@ -41,8 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var batteryOverride = false
     var hotKeyOK = true
     var lastNudge = Date.distantPast
+    var lastEvaluate = Date.distantPast
     var autoNudgeSeconds = 120
     var lastPolicyScan = Date.distantPast
+    var shutdownAlert: NSAlert?
+    var shutdownRemaining = 0
 
     // MARK: menu items
     var statusLine: NSMenuItem!
@@ -54,10 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var appsItem: NSMenuItem!
     let appsMenu = NSMenu()
     var scheduleItem: NSMenuItem!
-    let daysMenu = NSMenu()
-    let startMenu = NSMenu()
-    let endMenu = NSMenu()
-    var endOffItem: NSMenuItem!
     var screenItem: NSMenuItem!
     var activityItem: NSMenuItem!
     var mouseItem: NSMenuItem!
@@ -116,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         LoginItem.repairPath()
         rescanPolicies()
-        wasInWorkHours = settings.scheduleEnabled && Triggers.inWorkHours(settings)
+        wasInWorkHours = Triggers.inWorkHours(settings)
         if settings.startActive && !cliLaunch { manualOn = true }
         evaluate(allowNudge: false)
 
@@ -146,12 +145,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             manualUntil = nil
         }
 
-        let inHours = settings.scheduleEnabled && Triggers.inWorkHours(settings, now)
-        if wasInWorkHours && !inHours && settings.scheduleEndTurnsOff && manualOn {
-            manualOn = false
-            manualUntil = nil
-        }
-        wasInWorkHours = inHours
+        // Work hours. wasInWorkHours tracks the window itself (not whether the schedule is on), so switching
+        // the schedule off never counts as "work hours ended". Only react to an end seen live: if we were
+        // asleep across it (no evaluation in the last 2 minutes), don't lock or shut down later.
+        let fresh = now.timeIntervalSince(lastEvaluate) < 120
+        lastEvaluate = now
+        let inWindow = Triggers.inWorkHours(settings, now)
+        if settings.scheduleEnabled && wasInWorkHours && !inWindow && fresh { workHoursEnded() }
+        wasInWorkHours = inWindow
+        let inHours = settings.scheduleEnabled && inWindow
 
         // Automatic reasons
         var auto: [Reason] = []
@@ -205,6 +207,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateUI()
     }
 
+    func workHoursEnded() {
+        guard settings.scheduleEndTurnsOff else { return }
+        manualOn = false
+        manualUntil = nil
+        if settings.endShutdown {
+            DispatchQueue.main.async { self.shutdownCountdown() }
+        } else if settings.endLock && !locked {
+            SystemActions.lockScreen()
+        }
+    }
+
+    func shutdownCountdown() {
+        guard shutdownAlert == nil else { return }
+        let alert = NSAlert()
+        alert.messageText = "Work hours are over."
+        alert.addButton(withTitle: "Shut Down Now")
+        alert.addButton(withTitle: "Cancel")
+        shutdownAlert = alert
+        shutdownRemaining = 60
+        updateShutdownText()
+        let t = Timer(timeInterval: 1, target: self, selector: #selector(shutdownTick), userInfo: nil, repeats: true)
+        RunLoop.main.add(t, forMode: .modalPanel)
+
+        NSApp.activate(ignoringOtherApps: true)
+        let result = alert.runModal()
+        t.invalidate()
+        shutdownAlert = nil
+        if result == .alertFirstButtonReturn, let error = SystemActions.shutDown() {
+            showAlert("Kapeyn couldn't shut down your Mac",
+                      "macOS said: \(error)\n\nAllow Kapeyn to control System Events in System Settings > Privacy & Security > Automation.")
+        }
+    }
+
+    @objc func shutdownTick() {
+        shutdownRemaining -= 1
+        updateShutdownText()
+        if shutdownRemaining <= 0 { NSApp.stopModal(withCode: .alertFirstButtonReturn) }
+    }
+
+    func updateShutdownText() {
+        shutdownAlert?.informativeText = "Kapeyn will shut down this Mac in \(max(0, shutdownRemaining)) seconds.\n"
+            + "Save your work, or click Cancel to keep working."
+    }
+
     func rescanPolicies() {
         lastPolicyScan = Date()
         autoNudgeSeconds = Doctor.recommendedNudgeSeconds(Doctor.scan())
@@ -233,7 +279,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: events
 
-    @objc func didWake() { evaluate(allowNudge: false) }
+    @objc func didWake() {
+        // Start fresh, so an end of work hours that passed while asleep isn't acted on.
+        wasInWorkHours = Triggers.inWorkHours(settings)
+        evaluate(allowNudge: false)
+    }
     @objc func screenLocked() { locked = true; evaluate(allowNudge: false) }
     @objc func screenUnlocked() { locked = false; evaluate(allowNudge: false) }
 
@@ -304,9 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : "no"
         lines.append("  Keep screen on: \(yesNo(settings.keepScreenOn)) | Prevent screen lock: \(lockText)")
         var auto = "  Automatic: calls \(yesNo(settings.whileCall)) | downloads \(yesNo(settings.whileDownloading)) | work hours "
-        auto += settings.scheduleEnabled
-            ? "\(Format.days(settings.scheduleDays)) \(Format.hour(settings.scheduleStart))-\(Format.hour(settings.scheduleEnd))"
-            : "no"
+        auto += settings.scheduleEnabled ? Format.schedule(settings) : "no"
         let apps = settings.watchApps
         if !apps.isEmpty { auto += " | apps " + apps.map { $0.name }.joined(separator: ", ") }
         lines.append(auto)
@@ -429,19 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         autoMenu.addItem(.separator())
         scheduleItem = item("During work hours", #selector(toggleSchedule))
         autoMenu.addItem(scheduleItem)
-        for i in 1...7 {
-            let day = i % 7 // Monday first
-            daysMenu.addItem(item(dayNames[day], #selector(toggleDay(_:)), tag: day))
-        }
-        for h in 5...12 { startMenu.addItem(item(Format.hour(h), #selector(pickStart(_:)), tag: h)) }
-        for h in 13...23 { endMenu.addItem(item(Format.hour(h), #selector(pickEnd(_:)), tag: h)) }
-        let hoursMenu = NSMenu()
-        hoursMenu.addItem(submenu("Days", daysMenu))
-        hoursMenu.addItem(submenu("Start", startMenu))
-        hoursMenu.addItem(submenu("End", endMenu))
-        autoMenu.addItem(submenu("Work hours", hoursMenu))
-        endOffItem = item("Turn Kapeyn off when work hours end", #selector(toggleEndOff))
-        autoMenu.addItem(endOffItem)
+        autoMenu.addItem(item("Set work hours…", #selector(showWorkHours)))
         menu.addItem(submenu("Keep awake automatically", autoMenu))
 
         // Settings
@@ -498,12 +534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let count = settings.watchApps.count
         appsItem.title = count == 0 ? "While these apps are open" : "While these apps are open (\(count))"
         scheduleItem.state = settings.scheduleEnabled ? .on : .off
-        scheduleItem.title = "During work hours (\(Format.days(settings.scheduleDays)), "
-            + "\(Format.hour(settings.scheduleStart)) - \(Format.hour(settings.scheduleEnd)))"
-        for i in daysMenu.items { i.state = settings.scheduleDays & (1 << i.tag) != 0 ? .on : .off }
-        for i in startMenu.items { i.state = i.tag == settings.scheduleStart ? .on : .off }
-        for i in endMenu.items { i.state = i.tag == settings.scheduleEnd ? .on : .off }
-        endOffItem.state = settings.scheduleEndTurnsOff ? .on : .off
+        scheduleItem.title = "During work hours (\(Format.schedule(settings)))"
 
         screenItem.state = settings.keepScreenOn ? .on : .off
         activityItem.state = settings.simulateActivity ? .on : .off
@@ -566,14 +597,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggleCall() { settings.whileCall.toggle(); changed() }
     @objc func toggleNet() { settings.whileDownloading.toggle(); changed() }
     @objc func toggleSchedule() { settings.scheduleEnabled.toggle(); changed() }
-    @objc func toggleDay(_ sender: NSMenuItem) { settings.scheduleDays ^= 1 << sender.tag; changed() }
-    @objc func pickStart(_ sender: NSMenuItem) {
-        settings.scheduleStart = sender.tag
-        if settings.scheduleEnd <= sender.tag { settings.scheduleEnd = min(24, sender.tag + 8) }
+    @objc func showWorkHours() {
+        guard WorkHoursPanel(settings: settings).run() else { return }
+        // New times: start from where we are now, so saving never counts as "work hours just ended".
+        wasInWorkHours = Triggers.inWorkHours(settings)
         changed()
     }
-    @objc func pickEnd(_ sender: NSMenuItem) { settings.scheduleEnd = sender.tag; changed() }
-    @objc func toggleEndOff() { settings.scheduleEndTurnsOff.toggle() }
 
     @objc func removeApp(_ sender: NSMenuItem) {
         var apps = settings.watchApps

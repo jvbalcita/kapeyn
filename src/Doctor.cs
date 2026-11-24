@@ -274,10 +274,17 @@ namespace Kapeyn
             return h == 1 ? "1 hour" : h + " hours";
         }
 
-        public static string Hour(int hour)
+        /// Minutes after midnight -> "9:00 AM" (in the user's own format).
+        public static string TimeOfDay(int minutes)
         {
-            if (hour == 24) return "midnight";
-            return new DateTime(2000, 1, 1, hour, 0, 0).ToString("t");
+            return new DateTime(2000, 1, 1).AddMinutes(((minutes % 1440) + 1440) % 1440).ToString("t");
+        }
+
+        /// "Mon-Fri, 9:00 AM - 5:00 PM" (adds "next day" for overnight hours).
+        public static string Schedule(Settings s)
+        {
+            return Days(s.ScheduleDays) + ", " + TimeOfDay(s.ScheduleStartMin) + " - " + TimeOfDay(s.ScheduleEndMin) +
+                   (s.ScheduleEndMin < s.ScheduleStartMin ? " (next day)" : "");
         }
 
         public static string Ago(DateTime when)
