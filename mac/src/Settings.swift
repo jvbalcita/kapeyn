@@ -23,9 +23,11 @@ final class Settings {
             "WhileDownloading": true,
             "ScheduleEnabled": false,
             "ScheduleDays": 0x3E, // bit per day, Sunday = bit 0 -> Mon..Fri
-            "ScheduleStart": 9,
-            "ScheduleEnd": 17,
+            "ScheduleStartMin": 9 * 60, // minutes after midnight
+            "ScheduleEndMin": 17 * 60,  // earlier than start = ends the next day
             "ScheduleEndTurnsOff": true,
+            "EndLock": false,
+            "EndShutdown": false,
             "ScreenOffWhenLocked": true,
             "PauseBatteryPercent": 20,
             "Hotkey": true,
@@ -34,6 +36,12 @@ final class Settings {
         if d.integer(forKey: "SettingsVersion") < 2 {
             if d.integer(forKey: "NudgeSeconds") == 60 { d.set(0, forKey: "NudgeSeconds") }
             d.set(2, forKey: "SettingsVersion")
+        }
+        // v2 stored work hours as whole hours; v3 uses minutes.
+        if d.integer(forKey: "SettingsVersion") < 3 {
+            if let h = d.object(forKey: "ScheduleStart") as? Int { d.set(h * 60, forKey: "ScheduleStartMin") }
+            if let h = d.object(forKey: "ScheduleEnd") as? Int { d.set((h * 60) % 1440, forKey: "ScheduleEndMin") }
+            d.set(3, forKey: "SettingsVersion")
         }
     }
 
@@ -57,10 +65,19 @@ final class Settings {
         set { d.set(newValue, forKey: "NudgeSeconds") }
     }
     var scheduleDays: Int { get { return int("ScheduleDays") & 0x7F } set { d.set(newValue & 0x7F, forKey: "ScheduleDays") } }
-    var scheduleStart: Int { get { return min(23, max(0, int("ScheduleStart"))) } set { d.set(newValue, forKey: "ScheduleStart") } }
-    var scheduleEnd: Int {
-        get { let e = min(24, max(1, int("ScheduleEnd"))); return e > scheduleStart ? e : min(24, scheduleStart + 8) }
-        set { d.set(newValue, forKey: "ScheduleEnd") }
+    var endLock: Bool { get { return bool("EndLock") } set { d.set(newValue, forKey: "EndLock") } }
+    var endShutdown: Bool { get { return bool("EndShutdown") } set { d.set(newValue, forKey: "EndShutdown") } }
+
+    var scheduleStartMin: Int {
+        get { return min(1439, max(0, int("ScheduleStartMin"))) }
+        set { d.set(newValue, forKey: "ScheduleStartMin") }
+    }
+    var scheduleEndMin: Int {
+        get {
+            let e = min(1439, max(0, int("ScheduleEndMin")))
+            return e == scheduleStartMin ? (e + 8 * 60) % 1440 : e
+        }
+        set { d.set(newValue, forKey: "ScheduleEndMin") }
     }
     var pauseBatteryPercent: Int {
         get { return min(90, max(0, int("PauseBatteryPercent"))) }

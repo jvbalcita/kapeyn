@@ -18,7 +18,7 @@ namespace Kapeyn
     // %APPDATA%\Kapeyn\settings.ini
     sealed class Settings
     {
-        const int CurrentVersion = 2;
+        const int CurrentVersion = 3;
 
         public bool StartActive = true;
         public bool KeepScreenOn = true;
@@ -32,9 +32,11 @@ namespace Kapeyn
 
         public bool ScheduleEnabled = false;
         public int ScheduleDays = 0x3E;            // bit per day, Sunday = bit 0 -> Mon..Fri
-        public int ScheduleStart = 9;              // hour, inclusive
-        public int ScheduleEnd = 17;               // hour, exclusive
+        public int ScheduleStartMin = 9 * 60;      // minutes after midnight, inclusive
+        public int ScheduleEndMin = 17 * 60;       // exclusive; earlier than start = ends the next day
         public bool ScheduleEndTurnsOff = true;
+        public bool EndLock = false;               // when work hours end: also lock the PC
+        public bool EndShutdown = false;           // ...or also shut it down (60 s warning)
 
         public bool ScreenOffWhenLocked = true;
         public int PauseBatteryPercent = 20;       // 0 = never pause
@@ -63,6 +65,8 @@ namespace Kapeyn
                     return s;
                 }
                 int version = 1;
+                int oldStartHour = -1, oldEndHour = -1;
+                bool haveStartMin = false, haveEndMin = false;
                 foreach (string raw in File.ReadAllLines(FilePath))
                 {
                     int eq = raw.IndexOf('=');
@@ -87,9 +91,17 @@ namespace Kapeyn
                         case "watchapps": s.WatchApps = ParseApps(val); break;
                         case "scheduleenabled": if (bool.TryParse(val, out b)) s.ScheduleEnabled = b; break;
                         case "scheduledays": if (int.TryParse(val, out n)) s.ScheduleDays = n & 0x7F; break;
-                        case "schedulestart": if (int.TryParse(val, out n) && n >= 0 && n <= 23) s.ScheduleStart = n; break;
-                        case "scheduleend": if (int.TryParse(val, out n) && n >= 1 && n <= 24) s.ScheduleEnd = n; break;
+                        case "schedulestart": if (int.TryParse(val, out n) && n >= 0 && n <= 23) oldStartHour = n; break; // v2 (hours)
+                        case "scheduleend": if (int.TryParse(val, out n) && n >= 1 && n <= 24) oldEndHour = n; break;
+                        case "schedulestartmin":
+                            if (int.TryParse(val, out n) && n >= 0 && n < 1440) { s.ScheduleStartMin = n; haveStartMin = true; }
+                            break;
+                        case "scheduleendmin":
+                            if (int.TryParse(val, out n) && n >= 0 && n < 1440) { s.ScheduleEndMin = n; haveEndMin = true; }
+                            break;
                         case "scheduleendturnsoff": if (bool.TryParse(val, out b)) s.ScheduleEndTurnsOff = b; break;
+                        case "endlock": if (bool.TryParse(val, out b)) s.EndLock = b; break;
+                        case "endshutdown": if (bool.TryParse(val, out b)) s.EndShutdown = b; break;
                         case "screenoffwhenlocked": if (bool.TryParse(val, out b)) s.ScreenOffWhenLocked = b; break;
                         case "pausebatterypercent": if (int.TryParse(val, out n) && n >= 0 && n <= 90) s.PauseBatteryPercent = n; break;
                         case "hotkey": if (bool.TryParse(val, out b)) s.Hotkey = b; break;
@@ -97,7 +109,10 @@ namespace Kapeyn
                 }
                 // v1 always saved NudgeSeconds=60 (its default). Move those users to Auto.
                 if (version < 2 && s.NudgeSeconds == 60) s.NudgeSeconds = 0;
-                if (s.ScheduleEnd <= s.ScheduleStart) s.ScheduleEnd = Math.Min(24, s.ScheduleStart + 8);
+                if (!haveStartMin && oldStartHour >= 0) s.ScheduleStartMin = oldStartHour * 60;
+                if (!haveEndMin && oldEndHour >= 0) s.ScheduleEndMin = (oldEndHour * 60) % 1440;
+                if (s.ScheduleEndMin == s.ScheduleStartMin) s.ScheduleEndMin = (s.ScheduleStartMin + 8 * 60) % 1440;
+                if (s.EndShutdown) s.EndLock = false;
             }
             catch { }
             return s;
@@ -121,9 +136,11 @@ namespace Kapeyn
                     "WatchApps=" + FormatApps(WatchApps),
                     "ScheduleEnabled=" + ScheduleEnabled,
                     "ScheduleDays=" + ScheduleDays,
-                    "ScheduleStart=" + ScheduleStart,
-                    "ScheduleEnd=" + ScheduleEnd,
+                    "ScheduleStartMin=" + ScheduleStartMin,
+                    "ScheduleEndMin=" + ScheduleEndMin,
                     "ScheduleEndTurnsOff=" + ScheduleEndTurnsOff,
+                    "EndLock=" + EndLock,
+                    "EndShutdown=" + EndShutdown,
                     "ScreenOffWhenLocked=" + ScreenOffWhenLocked,
                     "PauseBatteryPercent=" + PauseBatteryPercent,
                     "Hotkey=" + Hotkey,
