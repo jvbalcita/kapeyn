@@ -9,9 +9,11 @@ struct WatchedApp: Equatable {
 
 // UserDefaults: com.kapeyn.Kapeyn
 final class Settings {
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
 
-    init() {
+    /// Tests pass their own (throwaway) defaults; the app uses the standard ones.
+    init(defaults: UserDefaults = .standard) {
+        d = defaults
         d.register(defaults: [
             "StartActive": true,
             "KeepScreenOn": true,

@@ -17,6 +17,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Run tests
+        shell: powershell
+        run: .\test.ps1
       - name: Build Kapeyn.exe and kapeyn.com
         shell: powershell
         run: .\build.ps1
@@ -43,6 +46,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Run tests
+        run: bash mac/tests/run.sh
       - name: Build Kapeyn.app (universal)
         run: bash mac/build.sh
       - name: Check the app bundle

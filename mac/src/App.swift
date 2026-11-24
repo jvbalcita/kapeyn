@@ -1,12 +1,6 @@
 import AppKit
 import ApplicationServices
 
-/// One reason to stay awake. `key` identifies it (for snoozing), `label` is what the user sees.
-struct Reason {
-    let key: String
-    let label: String
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let settings = Settings()
     let power = Power()
@@ -27,22 +21,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let iconOff = IconArt.menuBarIcon(on: false)
 
     // MARK: state
-    var manualOn = false
-    var manualUntil: Date?
-    var manualMinutes: Int?               // the "Keep awake for" choice, to show it checked in the menu
+    lazy var engine = Engine(computer: "Mac", inWorkHoursWindowNow: Triggers.inWorkHours(settings)) // decides awake/off and why
     var holds: [Int32: String] = [:]      // kapeyn run: pid -> label
-    var snoozed = Set<String>()           // automatic reasons the user turned off
-    var lastAuto: [Reason] = []
-    var reasons: [Reason] = []
-    var awake = false
-    var paused = false
-    var pauseWhy = ""
     var locked = false
-    var wasInWorkHours = false
-    var batteryOverride = false
     var hotKeyOK = true
     var lastNudge = Date.distantPast
-    var lastEvaluate = Date.distantPast
+
+    var awake: Bool { return engine.awake }
+    var manualOn: Bool { return engine.manualOn }
+    var manualUntil: Date? { return engine.manualUntil }
+    var manualMinutes: Int? { return engine.manualMinutes }
     var autoNudgeSeconds = 120
     var lastPolicyScan = Date.distantPast
     var shutdownAlert: NSAlert?
@@ -117,8 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         LoginItem.repairPath()
         rescanPolicies()
-        wasInWorkHours = Triggers.inWorkHours(settings)
-        if settings.startActive && !cliLaunch { manualOn = true }
+        if settings.startActive && !cliLaunch { engine.turnOn(minutes: nil, now: Date()) }
         evaluate(allowNudge: false)
 
         if !settings.welcomed && !cliLaunch {
@@ -142,24 +129,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let now = Date()
         if now.timeIntervalSince(lastPolicyScan) >= 600 { rescanPolicies() }
 
-        if manualOn, let u = manualUntil, now >= u {
-            manualOn = false
-            manualUntil = nil
-        }
-
-        // Work hours. wasInWorkHours tracks the window itself (not whether the schedule is on), so switching
-        // the schedule off never counts as "work hours ended". Only react to an end seen live: if we were
-        // asleep across it (no evaluation in the last 2 minutes), don't lock or shut down later.
-        let fresh = now.timeIntervalSince(lastEvaluate) < 120
-        lastEvaluate = now
-        let inWindow = Triggers.inWorkHours(settings, now)
-        if settings.scheduleEnabled && wasInWorkHours && !inWindow && fresh { workHoursEnded() }
-        wasInWorkHours = inWindow
-        let inHours = settings.scheduleEnabled && inWindow
-
-        // Automatic reasons
+        // Gather what's happening; the engine decides what it means.
         var auto: [Reason] = []
-        if inHours { auto.append(Reason(key: "hours", label: "work hours")) }
         if settings.whileCall && Triggers.micInUse() { auto.append(Reason(key: "call", label: "on a call")) }
         if settings.whileDownloading && net.update() { auto.append(Reason(key: "net", label: "downloading")) }
         for app in settings.watchApps where Triggers.isRunning(app.id) {
@@ -169,32 +140,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if Triggers.isAlive(pid) { auto.append(Reason(key: "cli:\(pid)", label: "running " + label)) }
             else { holds[pid] = nil }
         }
-        lastAuto = auto
-
-        // Forget snoozes for reasons that have ended, so the next call/download wakes Kapeyn again.
-        let keys = Set(auto.map { $0.key })
-        snoozed = snoozed.filter { keys.contains($0) }
-
-        var active: [Reason] = []
-        if manualOn {
-            active.append(Reason(key: "manual", label: manualUntil.map { Format.remaining($0.timeIntervalSince(now)) + " left" } ?? "turned on"))
-        }
-        active += auto.filter { !snoozed.contains($0.key) }
-        reasons = active
-        let wanted = !active.isEmpty
-
-        // Low battery pause
-        paused = false
-        pauseWhy = ""
         let battery = Triggers.battery()
-        if !battery.onBattery { batteryOverride = false }
-        if wanted && settings.pauseBatteryPercent > 0 && battery.onBattery && battery.percent >= 0
-            && battery.percent < settings.pauseBatteryPercent && !batteryOverride {
-            paused = true
-            pauseWhy = "battery at \(battery.percent)%"
-        }
 
-        awake = wanted && !paused
+        let ev = engine.step(settings: settings, now: now, inWindow: Triggers.inWorkHours(settings, now), auto: auto,
+                             onBattery: battery.onBattery, batteryPercent: battery.percent)
+        if ev.workHoursEnded { workHoursEnded(ev) }
+
         let screenMayGoOff = locked && settings.screenOffWhenLocked
         power.set(awake: awake, display: settings.keepScreenOn && !screenMayGoOff)
 
@@ -209,13 +160,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateUI()
     }
 
-    func workHoursEnded() {
-        guard settings.scheduleEndTurnsOff else { return }
-        manualOn = false
-        manualUntil = nil
-        if settings.endShutdown {
+    func workHoursEnded(_ ev: StepEvents) {
+        if ev.shutdown {
             DispatchQueue.main.async { self.shutdownCountdown() }
-        } else if settings.endLock && !locked {
+        } else if ev.lock && !locked {
             SystemActions.lockScreen()
         }
     }
@@ -259,20 +207,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func turnOn(_ minutes: Int?) {
-        manualOn = true
-        manualUntil = minutes.map { Date().addingTimeInterval(Double($0) * 60) }
-        manualMinutes = minutes
-        snoozed.removeAll()
-        batteryOverride = batteryOverride || paused
+        engine.turnOn(minutes: minutes, now: Date())
         lastNudge = .distantPast
         evaluate(allowNudge: false)
     }
 
     func turnOff() {
-        manualOn = false
-        manualUntil = nil
-        for r in lastAuto { snoozed.insert(r.key) }
-        batteryOverride = false
+        engine.turnOff()
         evaluate(allowNudge: false)
     }
 
@@ -284,7 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func didWake() {
         // Start fresh, so an end of work hours that passed while asleep isn't acted on.
-        wasInWorkHours = Triggers.inWorkHours(settings)
+        engine.rebaseline(inWorkHoursWindowNow: Triggers.inWorkHours(settings))
         evaluate(allowNudge: false)
     }
     @objc func screenLocked() { locked = true; evaluate(allowNudge: false) }
@@ -318,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "hold":
             guard parts.count > 1, let pid = Int32(parts[1]) else { return "error: expected hold <pid> <label>" }
             holds[pid] = parts.count > 2 ? parts[2] : "a command"
-            snoozed.remove("cli:\(pid)")
+            engine.unsnooze("cli:\(pid)")
             evaluate(allowNudge: false)
             return "ok"
         case "release":
@@ -338,12 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: text
 
-    func statusText() -> String {
-        if paused { return "Paused - " + pauseWhy }
-        if !awake { return "Off - Mac may sleep" }
-        if reasons.count == 1 && reasons[0].key == "manual" && manualUntil == nil { return "Awake" }
-        return "Awake - " + reasons.map { $0.label }.joined(separator: ", ")
-    }
+    func statusText() -> String { return engine.statusText() }
 
     func detailText() -> String? {
         guard awake else { return nil }
@@ -618,7 +554,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func showWorkHours() {
         guard WorkHoursPanel(settings: settings).run() else { return }
         // New times: start from where we are now, so saving never counts as "work hours just ended".
-        wasInWorkHours = Triggers.inWorkHours(settings)
+        engine.rebaseline(inWorkHoursWindowNow: Triggers.inWorkHours(settings))
         changed()
     }
 

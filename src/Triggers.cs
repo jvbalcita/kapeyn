@@ -184,8 +184,12 @@ namespace Kapeyn
                 }
             }
             catch { return DateTime.UtcNow < busyUntil; }
+            return Sample(total, DateTime.UtcNow);
+        }
 
-            DateTime now = DateTime.UtcNow;
+        /// Feeds one reading of total bytes received. Returns whether downloading counts as active.
+        public bool Sample(long total, DateTime now)
+        {
             if (lastBytes < 0)
             {
                 lastBytes = total;

@@ -10,14 +10,6 @@ using Microsoft.Win32;
 
 namespace Kapeyn
 {
-    // One reason to stay awake. Key identifies it (for snoozing), Label is what the user sees.
-    sealed class Reason
-    {
-        public readonly string Key;
-        public readonly string Label;
-        public Reason(string key, string label) { Key = key; Label = label; }
-    }
-
     sealed class TrayApp : ApplicationContext
     {
         static readonly int[] DurationMinutes = { 15, 30, 60, 120, 240, 480 };
@@ -37,18 +29,16 @@ namespace Kapeyn
         readonly IpcServer ipc;
 
         // ---- state ---------------------------------------------------------------------------
-        bool manualOn;
-        DateTime? manualUntil;
-        int? manualMinutes; // the "Keep awake for" choice, to show it checked in the menu
+        readonly Engine engine;                                                 // decides awake/off and why
         readonly Dictionary<int, string> holds = new Dictionary<int, string>(); // kapeyn run: pid -> label
-        readonly HashSet<string> snoozed = new HashSet<string>();               // auto reasons the user turned off
-        List<Reason> lastAuto = new List<Reason>();
-        List<Reason> reasons = new List<Reason>();
-        bool awake, paused, locked, wasInWorkHours, batteryOverride, batteryNotified, hotkeyOk;
+        bool locked, hotkeyOk;
         bool keepMenuOpen, shutdownPending;
-        string pauseWhy;
         DateTime lastNudge = DateTime.MinValue;
-        DateTime lastEvaluate = DateTime.MinValue;
+
+        bool awake { get { return engine.Awake; } }
+        bool manualOn { get { return engine.ManualOn; } }
+        DateTime? manualUntil { get { return engine.ManualUntil; } }
+        int? manualMinutes { get { return engine.ManualMinutes; } }
         readonly HashSet<ToolStripItem> stickyItems = new HashSet<ToolStripItem>(); // clicking these keeps the menu open
         int autoNudgeSeconds = 120;
         DateTime lastPolicyScan = DateTime.MinValue;
@@ -62,6 +52,7 @@ namespace Kapeyn
         public TrayApp(EventWaitHandle secondLaunchSignal, bool cliLaunch)
         {
             settings = Settings.Load();
+            engine = new Engine("PC", Triggers.InWorkHours(settings, DateTime.Now));
 
             invoker = new Control();
             IntPtr forceHandle = invoker.Handle; // create the window handle so Invoke works
@@ -108,8 +99,7 @@ namespace Kapeyn
             Startup.RepairPath();
             RescanPolicies();
 
-            wasInWorkHours = Triggers.InWorkHours(settings, DateTime.Now);
-            if (settings.StartActive && !cliLaunch) manualOn = true;
+            if (settings.StartActive && !cliLaunch) engine.TurnOn(null, DateTime.Now);
             Evaluate(false);
 
             if (settings.FirstRun)
@@ -134,26 +124,8 @@ namespace Kapeyn
             DateTime now = DateTime.Now;
             if ((now - lastPolicyScan).TotalMinutes >= 10) RescanPolicies();
 
-            if (manualOn && manualUntil.HasValue && now >= manualUntil.Value)
-            {
-                manualOn = false;
-                manualUntil = null;
-                Notify("Kapeyn", "Timer finished. Your PC can sleep again.");
-            }
-
-            // Work hours. wasInWorkHours tracks the window itself (not whether the schedule is on), so switching
-            // the schedule off never counts as "work hours ended". Only react to an end seen live: if we were
-            // asleep or suspended across it (no evaluation in the last 2 minutes), don't lock or shut down later.
-            bool fresh = (now - lastEvaluate).TotalMinutes < 2;
-            lastEvaluate = now;
-            bool inWindow = Triggers.InWorkHours(settings, now);
-            if (settings.ScheduleEnabled && wasInWorkHours && !inWindow && fresh) OnWorkHoursEnded();
-            wasInWorkHours = inWindow;
-            bool inHours = settings.ScheduleEnabled && inWindow;
-
-            // Automatic reasons
+            // Gather what's happening; the engine decides what it means.
             var auto = new List<Reason>();
-            if (inHours) auto.Add(new Reason("hours", "work hours"));
             if (settings.WhileCall)
             {
                 string who;
@@ -169,39 +141,16 @@ namespace Kapeyn
                 if (!Triggers.IsAlive(pid)) holds.Remove(pid);
                 else auto.Add(new Reason("cli:" + pid, "running " + holds[pid]));
             }
-            lastAuto = auto;
-
-            // Forget snoozes for reasons that have ended, so the next call/download wakes Kapeyn again.
-            var keys = new HashSet<string>(auto.Select(r => r.Key));
-            snoozed.RemoveWhere(k => !keys.Contains(k));
-
-            var active = new List<Reason>();
-            if (manualOn)
-                active.Add(new Reason("manual", manualUntil.HasValue ? Format.Remaining(manualUntil.Value - now) + " left" : "turned on"));
-            active.AddRange(auto.Where(r => !snoozed.Contains(r.Key)));
-            reasons = active;
-            bool wanted = active.Count > 0;
-
-            // Low battery pause
-            paused = false;
-            pauseWhy = null;
             int pct;
             bool onBattery = Triggers.OnBattery(out pct);
-            if (!onBattery) batteryOverride = false;
-            if (wanted && settings.PauseBatteryPercent > 0 && onBattery && pct >= 0 &&
-                pct < settings.PauseBatteryPercent && !batteryOverride)
-            {
-                paused = true;
-                pauseWhy = "battery at " + pct + "%";
-                if (!batteryNotified)
-                {
-                    batteryNotified = true;
-                    Notify("Kapeyn paused", "Battery is at " + pct + "%, so your PC may sleep. Click the cup to keep it awake anyway.");
-                }
-            }
-            if (!paused) batteryNotified = false;
 
-            awake = wanted && !paused;
+            StepEvents ev = engine.Step(settings, now, Triggers.InWorkHours(settings, now), auto, onBattery, pct);
+
+            if (ev.TimerEnded) Notify("Kapeyn", "Timer finished. Your PC can sleep again.");
+            if (ev.WorkHoursEnded) OnWorkHoursEnded(ev);
+            if (ev.PauseStarted)
+                Notify("Kapeyn paused", "Battery is at " + pct + "%, so your PC may sleep. Click the cup to keep it awake anyway.");
+
             ApplyPowerRequest();
 
             if (awake && allowNudge && settings.SimulateActivity && !locked)
@@ -217,23 +166,18 @@ namespace Kapeyn
             UpdateUi();
         }
 
-        void OnWorkHoursEnded()
+        void OnWorkHoursEnded(StepEvents ev)
         {
-            if (!settings.ScheduleEndTurnsOff) return;
-            bool wasOn = manualOn;
-            manualOn = false;
-            manualUntil = null;
-
-            if (settings.EndShutdown)
+            if (ev.Shutdown)
             {
                 invoker.BeginInvoke(new Action(ShutdownCountdown));
             }
-            else if (settings.EndLock)
+            else if (ev.Lock)
             {
                 Notify("Kapeyn", "Work hours are over. Kapeyn turned itself off and locked your PC.");
                 if (!locked) Native.LockWorkStation();
             }
-            else if (wasOn)
+            else if (ev.WasManualOn)
             {
                 Notify("Kapeyn", "Work hours are over, so Kapeyn turned itself off.");
             }
@@ -290,21 +234,14 @@ namespace Kapeyn
 
         void TurnOn(int? minutes)
         {
-            manualOn = true;
-            manualUntil = minutes.HasValue ? DateTime.Now.AddMinutes(minutes.Value) : (DateTime?)null;
-            manualMinutes = minutes;
-            snoozed.Clear();
-            batteryOverride = paused || batteryOverride;
+            engine.TurnOn(minutes, DateTime.Now);
             lastNudge = DateTime.MinValue;
             Evaluate(false);
         }
 
         void TurnOff()
         {
-            manualOn = false;
-            manualUntil = null;
-            foreach (var r in lastAuto) snoozed.Add(r.Key);
-            batteryOverride = false;
+            engine.TurnOff();
             Evaluate(false);
         }
 
@@ -323,7 +260,7 @@ namespace Kapeyn
                 // Woke from sleep: start fresh, so an end of work hours that passed while asleep isn't acted on.
                 invoker.BeginInvoke(new Action(delegate
                 {
-                    wasInWorkHours = Triggers.InWorkHours(settings, DateTime.Now);
+                    engine.Rebaseline(Triggers.InWorkHours(settings, DateTime.Now));
                     Evaluate(false);
                 }));
             }
@@ -379,7 +316,7 @@ namespace Kapeyn
                     if (parts.Length > 1 && int.TryParse(parts[1], out n))
                     {
                         holds[n] = parts.Length > 2 ? parts[2] : "a command";
-                        snoozed.Remove("cli:" + n);
+                        engine.Unsnooze("cli:" + n);
                         Evaluate(false);
                         return "ok";
                     }
@@ -420,14 +357,7 @@ namespace Kapeyn
 
         // ---- text ----------------------------------------------------------------------------
 
-        string StatusLine()
-        {
-            if (paused) return "Paused - " + pauseWhy;
-            if (!awake) return "Off - PC may sleep";
-            // Just "Awake" when the only reason is that the user turned it on.
-            if (reasons.Count == 1 && reasons[0].Key == "manual" && !manualUntil.HasValue) return "Awake";
-            return "Awake - " + string.Join(", ", reasons.Select(r => r.Label).ToArray());
-        }
+        string StatusLine() { return engine.StatusLine(); }
 
         string DetailLine()
         {
@@ -752,7 +682,7 @@ namespace Kapeyn
             }
             settings.Save();
             // New times: start from where we are now, so saving never counts as "work hours just ended".
-            wasInWorkHours = Triggers.InWorkHours(settings, DateTime.Now);
+            engine.Rebaseline(Triggers.InWorkHours(settings, DateTime.Now));
             Evaluate(false);
         }
 

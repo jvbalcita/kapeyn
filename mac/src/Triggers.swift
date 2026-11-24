@@ -110,31 +110,39 @@ final class NetMonitor {
 
     func update() -> Bool {
         let now = Date()
-        let elapsed = now.timeIntervalSince(lastTime)
-        if !lastPerInterface.isEmpty && elapsed < 4 { return now < busyUntil } // called early: keep the answer
+        if !lastPerInterface.isEmpty && now.timeIntervalSince(lastTime) < 4 { return now < busyUntil }
 
         var ifap: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifap) == 0, let first = ifap else { return now < busyUntil }
         defer { freeifaddrs(ifap) }
 
-        var current: [String: UInt32] = [:]
-        var delta: UInt64 = 0
+        var counters: [String: UInt32] = [:]
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
         while let entry = cursor {
             let ifa = entry.pointee
             if let addr = ifa.ifa_addr, addr.pointee.sa_family == UInt8(AF_LINK), let data = ifa.ifa_data {
                 let name = String(cString: ifa.ifa_name)
                 if !name.hasPrefix("lo") {
-                    let bytes = data.assumingMemoryBound(to: if_data.self).pointee.ifi_ibytes
-                    if let previous = lastPerInterface[name] { delta += UInt64(bytes &- previous) } // 32-bit counter wraps
-                    current[name] = bytes
+                    counters[name] = data.assumingMemoryBound(to: if_data.self).pointee.ifi_ibytes
                 }
             }
             cursor = ifa.ifa_next
         }
+        return sample(counters, now: now)
+    }
+
+    /// Feeds one reading of each interface's received-bytes counter. Returns whether downloading counts as active.
+    func sample(_ counters: [String: UInt32], now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(lastTime)
+        if !lastPerInterface.isEmpty && elapsed < 4 { return now < busyUntil } // called early: keep the answer
+
+        var delta: UInt64 = 0
+        for (name, bytes) in counters {
+            if let previous = lastPerInterface[name] { delta += UInt64(bytes &- previous) } // 32-bit counters wrap
+        }
 
         let hadBaseline = !lastPerInterface.isEmpty
-        lastPerInterface = current
+        lastPerInterface = counters
         lastTime = now
         guard hadBaseline, elapsed > 0 else { return false }
 
