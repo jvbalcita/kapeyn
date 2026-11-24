@@ -1,13 +1,13 @@
 # Writes the winget manifests for a published Kapeyn release, in winget-pkgs' folder layout:
-#   packaging\winget\manifests\j\JVBalcita\Kapeyn\<version>\
+#   packaging\winget\manifests\k\Kapeyn\Kapeyn\<version>\
 # Usage:  powershell -ExecutionPolicy Bypass -File packaging\winget\new-manifest.ps1 -Version 2.3.1
-# Then:   winget validate --manifest packaging\winget\manifests\j\JVBalcita\Kapeyn\2.3.1
+# Then:   winget validate --manifest packaging\winget\manifests\k\Kapeyn\Kapeyn\2.3.1
 # The installer is the release's Kapeyn-Windows.zip; its SHA-256 comes from the release's SHA256SUMS.txt.
 param([Parameter(Mandatory = $true)][string]$Version)
 $ErrorActionPreference = 'Stop'
 $Version = $Version.TrimStart('v')
 $tag = "v$Version"
-$id = 'JVBalcita.Kapeyn'
+$id = 'Kapeyn.Kapeyn'
 $base = "https://github.com/jvbalcita/kapeyn/releases/download/$tag"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -20,7 +20,7 @@ $sha = ($line.Trim() -split '\s+')[0].ToUpperInvariant()
 $release = Invoke-RestMethod -UseBasicParsing "https://api.github.com/repos/jvbalcita/kapeyn/releases/tags/$tag" -Headers @{ 'User-Agent' = 'kapeyn-winget' }
 $date = ([datetime]$release.published_at).ToString('yyyy-MM-dd')
 
-$dir = Join-Path $PSScriptRoot "manifests\j\JVBalcita\Kapeyn\$Version"
+$dir = Join-Path $PSScriptRoot "manifests\k\Kapeyn\Kapeyn\$Version"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $schema = '1.9.0'
 
@@ -58,15 +58,14 @@ ManifestVersion: $schema
 PackageIdentifier: $id
 PackageVersion: $Version
 PackageLocale: en-US
-Publisher: JV Balcita
-PublisherUrl: https://github.com/jvbalcita
+Publisher: Kapeyn
+PublisherUrl: https://github.com/jvbalcita/kapeyn
 PublisherSupportUrl: https://github.com/jvbalcita/kapeyn/issues
-Author: JV Balcita
+Author: Kapeyn contributors
 PackageName: Kapeyn
 PackageUrl: https://github.com/jvbalcita/kapeyn
 License: MIT
 LicenseUrl: https://github.com/jvbalcita/kapeyn/blob/main/LICENSE
-Copyright: Copyright (c) 2026 JV Balcita
 ShortDescription: Keep your computer awake, intelligently.
 Description: |-
   Kapeyn is a tiny tray app that stops sleep, screen lock and chat apps' "Away" status, only when you need it.

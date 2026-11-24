@@ -104,7 +104,7 @@ namespace Kapeyn
             {
                 string winget = Path.Combine(local, @"Microsoft\WinGet\Packages");
                 if (Directory.Exists(winget))
-                    foreach (string dir in Directory.GetDirectories(winget, "JVBalcita.Kapeyn*"))
+                    foreach (string dir in Directory.GetDirectories(winget, "Kapeyn.Kapeyn*"))
                         candidates.Add(Path.Combine(dir, "Kapeyn.exe"));
             }
             catch { }
