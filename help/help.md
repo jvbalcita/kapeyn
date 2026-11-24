@@ -181,7 +181,7 @@ Control Kapeyn from a terminal. The command is `kapeyn`.
 ## Get the command
 [win] - If you installed Kapeyn with the one-line install or **install.ps1**, the command is ready. Open a **new** PowerShell or Command Prompt window and type `kapeyn`.
 [win] - If you only downloaded **Kapeyn.exe**, install it properly by pasting this into PowerShell:
-[win] `irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 | iex`
+[win] `irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 -OutFile $env:TEMP\kapeyn-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\kapeyn-install.ps1`
 [mac] - If you installed with Homebrew, the one-line install or `bash install.sh`, the command is usually ready. Open a new Terminal window and type `kapeyn`.
 [mac] - Otherwise, choose **Command line...** in Kapeyn's menu and click **Install command**. macOS asks for your password once.
 

@@ -83,13 +83,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: One-line install (irm ... | iex)
+      - name: One-line install (download the installer to TEMP, then run it)
         shell: powershell
         run: |
-          # Run this branch's install.ps1 exactly like the one-liner does: piped into Invoke-Expression, from elsewhere.
-          $script = Get-Content -Raw "$env:GITHUB_WORKSPACE\install.ps1"
-          Set-Location $env:RUNNER_TEMP
-          Invoke-Expression $script
+          # Same as the published one-liner, using this branch's install.ps1: with no app files next to it,
+          # it downloads the latest release and checks its SHA-256.
+          Copy-Item "$env:GITHUB_WORKSPACE\install.ps1" "$env:TEMP\kapeyn-install.ps1"
+          powershell -ExecutionPolicy Bypass -File "$env:TEMP\kapeyn-install.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "installer failed" }
       - name: Check the installation
         shell: powershell
         run: |
@@ -105,7 +106,7 @@ jobs:
       - name: One-line uninstall
         shell: powershell
         run: |
-          & ([scriptblock]::Create((Get-Content -Raw "$env:GITHUB_WORKSPACE\install.ps1"))) -Uninstall
+          powershell -ExecutionPolicy Bypass -File "$env:TEMP\kapeyn-install.ps1" -Uninstall
           if (Test-Path "$env:LOCALAPPDATA\Programs\Kapeyn") { throw "install folder still there" }
           $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
           if ($userPath -like '*Programs\Kapeyn*') { throw "still on PATH" }
@@ -173,7 +174,7 @@ jobs:
 
             **Windows 10/11.** Paste into PowerShell. It installs the app and the `kapeyn` command, and starts at sign-in. No admin needed, no SmartScreen warning.
             ```powershell
-            irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 | iex
+            irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 -OutFile $env:TEMP\kapeyn-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\kapeyn-install.ps1
             ```
 
             **macOS 12+.** Paste into Terminal. It builds Kapeyn on your Mac, so there's no "unverified developer" warning.

@@ -3,13 +3,12 @@
 #   - adds that folder to your PATH, so "kapeyn" works in new terminal windows
 #   - adds a Start menu shortcut, starts Kapeyn at sign-in, and starts it now
 #
-# One-line install (downloads the latest release and checks its SHA-256):
-#   irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 | iex
+# One-line install (downloads this script, then the latest release, and checks its SHA-256):
+#   irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 -OutFile $env:TEMP\kapeyn-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\kapeyn-install.ps1
+# (Piping it into iex also works, but security software on work PCs often blocks that pattern.)
 # From an unzipped Kapeyn-Windows.zip or this repository:
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
-# Uninstall:
-#   powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
-#   & ([scriptblock]::Create((irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1))) -Uninstall
+# Uninstall: add -Uninstall to either command.
 param([switch]$Uninstall, [string]$Version = 'latest')
 
 function Install-Kapeyn([bool]$Uninstall, [string]$Version, [string]$ScriptDir) {

@@ -105,8 +105,10 @@ The result: one small app, no admin rights, and no more "did my screen lock agai
 **Windows 10/11.** Paste into **PowerShell**:
 
 ```powershell
-irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 | iex
+irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 -OutFile $env:TEMP\kapeyn-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\kapeyn-install.ps1
 ```
+
+<sub>This downloads the installer to a file and then runs it. The shorter `irm … | iex` form works on many PCs, but security software on work computers often blocks that pattern.</sub>
 
 **macOS 12+.** Paste into **Terminal**:
 
@@ -137,7 +139,7 @@ brew install kapeyn
 **Windows uninstall:**
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1))) -Uninstall
+irm https://github.com/jvbalcita/kapeyn/releases/latest/download/install.ps1 -OutFile $env:TEMP\kapeyn-install.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\kapeyn-install.ps1 -Uninstall
 ```
 
 The Windows installer copies `Kapeyn.exe` and `kapeyn.com` to `%LOCALAPPDATA%\Programs\Kapeyn`. It adds that folder to your user PATH, creates a Start menu shortcut, adds a start-at-sign-in entry (`HKCU\…\Run`), and starts Kapeyn.
