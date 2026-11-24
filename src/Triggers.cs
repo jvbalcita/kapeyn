@@ -12,10 +12,19 @@ namespace Kapeyn
     static class Triggers
     {
         // ---- work hours ----------------------------------------------------------------------
+        /// True inside the work-hours window (ignores whether the schedule is switched on).
+        /// A window that ends earlier than it starts runs overnight and belongs to the day it started.
         public static bool InWorkHours(Settings s, DateTime now)
         {
-            if ((s.ScheduleDays & (1 << (int)now.DayOfWeek)) == 0) return false;
-            return now.Hour >= s.ScheduleStart && now.Hour < s.ScheduleEnd;
+            int t = now.Hour * 60 + now.Minute;
+            int start = s.ScheduleStartMin, end = s.ScheduleEndMin;
+            if (start < end) return DayOn(s, now.DayOfWeek) && t >= start && t < end;
+            return (t >= start && DayOn(s, now.DayOfWeek)) || (t < end && DayOn(s, now.AddDays(-1).DayOfWeek));
+        }
+
+        static bool DayOn(Settings s, DayOfWeek d)
+        {
+            return (s.ScheduleDays & (1 << (int)d)) != 0;
         }
 
         // ---- on a call (microphone in use) -----------------------------------------------------

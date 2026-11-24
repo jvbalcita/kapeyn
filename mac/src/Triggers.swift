@@ -6,12 +6,17 @@ import IOKit.ps
 enum Triggers {
     // MARK: work hours
 
+    /// True inside the work-hours window (ignores whether the schedule is switched on).
+    /// A window that ends earlier than it starts runs overnight and belongs to the day it started.
     static func inWorkHours(_ s: Settings, _ date: Date = Date()) -> Bool {
         let cal = Calendar.current
-        let weekday = cal.component(.weekday, from: date) - 1 // 0 = Sunday
-        guard s.scheduleDays & (1 << weekday) != 0 else { return false }
-        let hour = cal.component(.hour, from: date)
-        return hour >= s.scheduleStart && hour < s.scheduleEnd
+        let t = cal.component(.hour, from: date) * 60 + cal.component(.minute, from: date)
+        let today = cal.component(.weekday, from: date) - 1 // 0 = Sunday
+        let yesterday = (today + 6) % 7
+        let days = s.scheduleDays
+        let start = s.scheduleStartMin, end = s.scheduleEndMin
+        if start < end { return days & (1 << today) != 0 && t >= start && t < end }
+        return (t >= start && days & (1 << today) != 0) || (t < end && days & (1 << yesterday) != 0)
     }
 
     // MARK: on a call (some app is using a microphone)
