@@ -34,6 +34,7 @@ A tiny tray / menu bar app for Windows and macOS that stops sleep, screen lock a
 - [Quick start](#quick-start)
 - [Using Kapeyn](#using-kapeyn)
   - [The cup and the menu](#the-cup-and-the-menu)
+  - [When it's done](#when-its-done)
   - [Automatic modes](#automatic-modes)
   - [Work hours](#work-hours)
   - [Lock doctor](#lock-doctor)
@@ -72,13 +73,14 @@ The result: one small app, no admin rights, and no more "did my screen lock agai
 |---|---|---|
 | ☕ | **One-click on/off** | Click the cup or press **Ctrl+Alt+K** (Windows) / **⌃⌥K** (Mac). Hover to see *why* it's awake. |
 | ⏱️ | **Timed sessions** | Keep awake for 15 min to 8 h, then switch off by itself. |
+| 🏁 | **When it's done** | Keep awake **until downloads finish, an app closes or a command ends**, then **sleep, lock or shut down** (60 s to cancel). No more leaving the computer on all night for a 40-minute job. |
 | 📞 | **While on a call** | Stays awake whenever any app uses the microphone (Teams, Zoom, Meet, Slack…). |
 | ⬇️ | **While downloading** | Stays awake during sustained downloads or streams. Short background syncs are ignored. |
 | 🪟 | **While apps are open** | Pick apps (video editor, remote desktop, VM…) that keep the computer awake. |
 | 🗓️ | **Work hours** | Days plus any start/end time, overnight shifts included. At the end it can turn off, **lock** or **shut down** (60 s to cancel). |
 | 🩺 | **Lock doctor** | Lists every lock/sleep timer, flags ones **set by your organization**, checks coverage, self-tests, and gives a verdict. |
 | ⚙️ | **Auto timing** | Nudges at half the shortest lock timer (30 s – 4 min), so it's never too late. |
-| 💻 | **`kapeyn` command** | `kapeyn on 2h`, `kapeyn run npm run build`, `kapeyn doctor`, `kapeyn status`… |
+| 💻 | **`kapeyn` command** | `kapeyn on 2h`, `kapeyn until downloads --then sleep`, `kapeyn run npm run build`, `kapeyn doctor`… |
 | 🔋 | **Knows when to stop** | Pauses on low battery, lets the screen sleep when *you* lock it, and respects "off" until a call or download ends. |
 | 📖 | **Built-in Help** | A searchable guide inside the app that covers every feature step by step. |
 | 🔒 | **Private by design** | No internet, no telemetry, no admin rights. One file on Windows (~100 KB). |
@@ -202,11 +204,30 @@ Right-click the cup (Control-click on a Mac) to open the menu:
 | **Status** | What Kapeyn is doing, and when it last nudged. |
 | **Turn on / off** | Same as clicking the cup or pressing the shortcut. |
 | **Keep awake for** | 15 min, 30 min, 1 h, 2 h, 4 h or 8 h, then off automatically. |
+| **Keep awake until** | Downloads finish, or an app you pick closes. |
+| **When it's done** | Do nothing, sleep, lock or shut down when that time is up or that job finishes. |
 | **Keep awake automatically** | Calls, downloads, chosen apps, work hours. |
 | **Settings** | Screen, lock prevention, nudge method and timing, battery, shortcut, startup. |
 | **Lock doctor** | Diagnose what could lock or sleep the computer. |
 | **Command line…** | How to use the `kapeyn` command. |
 | **Help** | The built-in guide. |
+
+### When it's done
+
+Stay awake until a job finishes, then let Kapeyn put the computer to sleep, lock it or shut it down.
+
+1. **Pick what to wait for:** a **Keep awake for** timer, **Keep awake until → Downloads finish** (done after 2 quiet minutes), **Keep awake until → An app closes**, or a command with `kapeyn run --then …`.
+2. **Pick what happens next** under **When it's done**: *Do nothing* (default), *Sleep*, *Lock*, or *Shut down*. Sleep and Shut down show a **60-second countdown with Cancel**.
+
+The status shows the whole plan, e.g. *Awake - until downloads finish, then sleep*. The choice applies to **this job only**: it resets once used, or when you turn Kapeyn off yourself, so a shutdown never carries over to the next day. If work hours end first, the work-hours settings win.
+
+```console
+$ kapeyn until downloads --then sleep
+Kapeyn: Awake - until downloads finish, then sleep
+
+$ kapeyn run --then shutdown robocopy C:\src D:\backup /MIR
+kapeyn: when robocopy finishes, Kapeyn will shut down the PC.
+```
 
 ### Automatic modes
 
@@ -267,7 +288,7 @@ The same findings drive **Auto** nudge timing: half of the shortest input-based 
 
 **Right-click → Help** (or `kapeyn guide`) opens a searchable guide with step-by-step instructions for every feature:
 - Getting started and the menu
-- Timed sessions and automatic modes
+- Timed sessions, When it's done, and automatic modes
 - Work hours and every setting
 - Lock doctor and the command line
 - Privacy, troubleshooting and About
@@ -283,9 +304,13 @@ The `kapeyn` command controls the running app, and starts it if needed.
 | `kapeyn` | Show status. |
 | `kapeyn on` | Keep awake until turned off. |
 | `kapeyn on <duration>` | Keep awake for a while: `45m`, `2h`, `1h30m` or plain minutes (`90`). |
+| `kapeyn until downloads` | Keep awake until downloads finish (2 quiet minutes). |
+| `kapeyn until <app>` | Keep awake until an app closes, by the name the menu shows (`"Premiere Pro"`) or its process name (`chrome`). |
+| `kapeyn run <command…>` | Keep awake **exactly** while a command runs, then return its exit code. |
+| `kapeyn then <action>` | What to do when the time is up or the job is done: `sleep`, `lock`, `shutdown` or `nothing`. |
+| `… --then <action>` | The same, added to `on`, `until` or `run`: `kapeyn on 2h --then sleep`, `kapeyn run --then lock make`. **Ctrl+C** on a `run` cancels the plan. |
 | `kapeyn off` | Turn off. |
 | `kapeyn toggle` | Switch on/off. |
-| `kapeyn run <command…>` | Keep awake **exactly** while a command runs, then return its exit code. |
 | `kapeyn doctor` | Run the Lock doctor and print the report. |
 | `kapeyn guide` | Open the built-in Help window. |
 | `kapeyn help` | List commands. |
@@ -353,7 +378,7 @@ Kapeyn re-evaluates every 5 seconds, and immediately on wake, lock/unlock and se
 - **Local only.** Settings live on your computer (see [Configuration reference](#configuration-reference)).
 - **Least privilege.** No admin rights, no services, no drivers. It runs as you.
 - **Minimal sensing.** It checks *whether* a microphone is in use (never audio), *how much* data arrives (never contents), and *which* apps are open, and only for modes you enabled.
-- **No surprises.** It never locks or shuts down unless you turned that on, and shutdown always shows a cancelable countdown.
+- **No surprises.** It never sleeps, locks or shuts down unless you asked it to (work hours or *When it's done*), and sleep and shutdown always show a cancelable countdown.
 - **Auditable.** All source code is in this repository, and releases are built from it by GitHub Actions.
 
 ## Configuration reference
@@ -490,12 +515,13 @@ The suites need no extra tools. Each uses a tiny built-in runner compiled with t
 | Area | What's checked |
 |---|---|
 | **Engine** | On/off, timed sessions and their end, automatic reasons, snoozing ("off" during a call), `kapeyn run` holds, status text. |
+| **When it's done** | Timer/download/app/command endings, the 2-minute quiet stretch for downloads, the action firing once and resetting, "off" by hand never firing it, work hours winning. |
 | **Work hours** | Boundaries to the minute, overnight shifts, midnight, day selection. End of work hours fires once and only when seen live: never after sleep, saving new hours, or switching the schedule off. Lock vs shutdown. |
 | **Battery** | Pause below the limit, one notice per pause, click-to-override, reset on plugging in, "Never". |
 | **Settings** | Defaults, save/load round trip, migrations from older versions, invalid values ignored. |
 | **Downloads** | One-off bursts ignored, sustained traffic detected, one-minute hold, counter resets and 32-bit wraps. |
 | **Lock doctor** | Auto nudge timing from the lock timers found. |
-| **Command line** | Duration parsing (`45m`, `2h`, `1h30m`, `1 hour 30 minutes`…) and rejections. |
+| **Command line** | Duration parsing (`45m`, `2h`, `1h30m`, `1 hour 30 minutes`…) and rejections; `--then` in any position, `--then shut down`, and a `run` command's own `--then` left alone. |
 | **Help guide** | Every topic present and filled in, no leftover tokens, and each platform sees only its own wording. |
 
 The decision logic lives in a UI-free `Engine` (`src/Engine.cs`, `mac/src/Engine.swift`) that both apps feed with what's happening, so its behavior can be tested exactly.
@@ -510,7 +536,7 @@ kapeyn/
 │   ├── TrayApp.cs          gathers inputs for the engine, tray icon and menu
 │   ├── Triggers.cs         work hours, calls, downloads, watched apps, battery
 │   ├── Doctor.cs           Lock doctor and report window
-│   ├── WorkHours.cs        work hours window and shutdown countdown
+│   ├── WorkHours.cs        work hours window and sleep/shutdown countdown
 │   ├── Help.cs             built-in Help window
 │   ├── Cli.cs / Ipc.cs     kapeyn command and named-pipe link to the app
 │   └── Native.cs …         Win32 calls, settings, icon drawing
@@ -525,6 +551,7 @@ kapeyn/
 ├── Formula/kapeyn.rb       Homebrew formula (copied to jvbalcita/homebrew-kapeyn on release)
 ├── mac/get.sh              Mac one-line installer (published as install-mac.sh)
 ├── build.ps1 / install.ps1 Windows build and (one-line) install scripts
+├── ROADMAP.md              ideas with open questions (not yet scheduled)
 ├── LICENSE                 MIT License
 └── .github/workflows/      CI: build both apps on every push and PR; publish releases on tags
 ```
@@ -546,7 +573,7 @@ Every push and pull request also tests all three install paths on real Windows a
 
 ## Contributing
 
-Issues and pull requests are welcome. By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
+Issues and pull requests are welcome. By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE). Ideas being considered, and the open questions behind them, are in the [roadmap](ROADMAP.md).
 
 1. Branch from `main`.
 2. Keep Windows and macOS behaviour in step. A feature usually touches `src/` and `mac/src/`, plus `help/help.md` and this README.

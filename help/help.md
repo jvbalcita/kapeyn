@@ -34,6 +34,8 @@ That's all you need. Everything else is optional.
 - **Status:** what Kapeyn is doing now, and when it last kept you active.
 - **Turn on / Turn off:** the same as clicking the cup.
 - **Keep awake for:** stay awake for a set time (15 minutes to 8 hours), then switch off by itself.
+- **Keep awake until:** stay awake until downloads finish or an app closes.
+- **When it's done:** what happens when that time is up or that job finishes: nothing, sleep, lock or shut down.
 - **Keep awake automatically:** switch on by itself during calls, downloads, chosen apps or work hours.
 - **Settings:** fine-tune how Kapeyn works.
 - **Lock doctor:** check what could lock or sleep your {computer}.
@@ -42,7 +44,7 @@ That's all you need. Everything else is optional.
 [win] - **Exit:** close Kapeyn completely.
 [mac] - **Quit Kapeyn:** close Kapeyn completely.
 
-[win] > In **Settings** and **Keep awake automatically**, the menu stays open after each click, so you can change several things in a row. Click anywhere else to close it.
+[win] > In **Settings**, **Keep awake automatically** and **When it's done**, the menu stays open after each click, so you can change several things in a row. Click anywhere else to close it.
 
 # Keep awake for a while
 Need your {computer} awake only for a meeting, a presentation or a long download?
@@ -57,6 +59,40 @@ Your choice gets a **check mark** and shows the time left, for example "1 hour (
 - **Until I turn it off:** the same submenu, or just click the cup.
 - **From the command line:** `kapeyn on 45m`, `kapeyn on 2h` or `kapeyn on 1h30m`.
 - **Stop early:** click the cup, press **{shortcut}**, or run `kapeyn off`.
+- **Then sleep, lock or shut down:** see **When it's done**.
+
+# When it's done
+Keep your {computer} awake until a job finishes, then let Kapeyn put it to sleep, lock it or shut it down. Handy for overnight downloads, renders and backups: no more leaving the {computer} on all night for a 40-minute job.
+
+## 1. Pick what to wait for
+{RightClick} the cup, then choose one of these:
+- **Keep awake for** a set time (see **Keep awake for a while**).
+- **Keep awake until > Downloads finish:** stays awake while files download, and finishes once nothing has downloaded for 2 minutes.
+- **Keep awake until > An app closes:** pick an open app, for example a video editor or an installer. Kapeyn finishes when the app closes.
+- **A command:** `kapeyn run --then sleep <command>` (see **Command line**).
+
+## 2. Pick what happens next
+Choose **When it's done**:
+- **Do nothing** (default): Kapeyn switches off and your {computer} follows its normal sleep settings.
+- **Sleep:** shows a **60-second countdown** with a **Cancel** button, then puts your {computer} to sleep.
+- **Lock the {Computer}:** locks the screen straight away.
+- **Shut down:** shows a 60-second countdown with a Cancel button, then shuts down normally. Apps with unsaved work can still stop the shutdown.
+
+You can pick these in either order. The menu shows your choice, for example "When it's done: Sleep", and hovering over the cup shows the whole plan, for example "Awake - until downloads finish, then sleep".
+
+## Good to know
+- The choice is for **this job only**. Once it's used, or if you turn Kapeyn off yourself, **When it's done** goes back to **Do nothing**, so a shutdown never surprises you the next day.
+- **Until I turn it off** has no end, so **When it's done** doesn't apply to it.
+- If your **work hours** end first, the work-hours settings decide what happens instead.
+[win] - Some newer laptops don't accept a direct sleep request. On those, Kapeyn turns the screen off instead, which puts them to sleep.
+[mac] - The first time Kapeyn shuts down your Mac, macOS asks whether Kapeyn may control "System Events". Click **OK**, or Kapeyn can't shut down.
+
+## From the command line
+- `kapeyn on 2h --then sleep`
+- `kapeyn until downloads --then shutdown`
+- `kapeyn until "Premiere Pro" --then lock`
+- `kapeyn run --then sleep npm run build`
+- `kapeyn then lock` changes the plan for the job that's running now.
 
 # Automatic modes
 Kapeyn can switch itself on when you need it, and off again when you don't. Find these under **Keep awake automatically**. A check mark means the option is on.
@@ -173,7 +209,10 @@ Control Kapeyn from a terminal. The command is `kapeyn`.
 - `kapeyn on 30m`, `kapeyn on 2h` or `kapeyn on 1h30m` keeps it awake for a while.
 - `kapeyn off` turns Kapeyn off.
 - `kapeyn toggle` switches between on and off.
+- `kapeyn until downloads` keeps it awake until downloads finish.
+- `kapeyn until <app>` keeps it awake until an app closes, for example `kapeyn until "Premiere Pro"`. Use the app's name as Kapeyn's menu shows it.
 - `kapeyn run <command>` keeps your {computer} awake exactly as long as the command runs, for example `kapeyn run npm run build`. It then hands back the command's result.
+- `kapeyn then sleep`, `lock`, `shutdown` or `nothing` sets what happens when the time is up or the job is done. You can also add it to the commands above: `kapeyn on 2h --then sleep`, `kapeyn run --then shutdown npm run build`. Stopping a command with **Ctrl+C** cancels the plan.
 - `kapeyn doctor` runs the Lock doctor.
 - `kapeyn guide` opens this guide.
 - `kapeyn help` lists the commands.
@@ -202,7 +241,7 @@ If Kapeyn isn't running, the command starts it for you.
 - It never records, listens or sends anything anywhere. It doesn't use the internet at all.
 - It never types, clicks or moves the mouse in a way you can see.
 - It never needs administrator rights.
-- It never locks or shuts down your {computer} unless you turned that on in **Work hours**.
+- It never sleeps, locks or shuts down your {computer} unless you asked it to, in **Work hours** or **When it's done**. Sleep and shut down always come with a 60-second countdown you can cancel.
 
 ## Use it responsibly
 Screen-lock timers on work computers are often a security rule. Lock your screen yourself (or let Kapeyn's **Work hours** lock it) when you step away, and follow your organization's policy.
@@ -228,6 +267,7 @@ Hover over the cup: it says why, for example "on a call" or "downloading". Turn 
 
 ## Kapeyn turned itself off
 - A **Keep awake for** timer ran out, or
+- a **Keep awake until** job finished (downloads done, app closed, command ended), or
 - your **work hours** ended, or
 - it paused because the **battery is low** (the cup shows why). Click the cup to keep it on anyway.
 

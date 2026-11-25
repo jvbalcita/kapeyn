@@ -3,35 +3,69 @@ import IOKit.pwr_mgt
 
 // The "kapeyn" command. Talks to the menu bar app, starting it if needed.
 enum CLI {
-    static let verbs: Set<String> = ["on", "off", "toggle", "status", "run", "doctor", "guide", "help", "-h", "--help"]
+    static let verbs: Set<String> = ["on", "off", "toggle", "status", "run", "until", "then", "doctor", "guide",
+                                     "help", "-h", "--help"]
 
     static let help = """
     kapeyn                      Show what Kapeyn is doing
     kapeyn on                   Keep awake until you turn it off
     kapeyn on 30m | 2h | 1h30m  Keep awake for a while
+    kapeyn until downloads      Keep awake until downloads finish
+    kapeyn until <app>          Keep awake until an app closes, e.g.  kapeyn until "Final Cut Pro"
+    kapeyn run <command...>     Keep awake until the command finishes, e.g.  kapeyn run npm run build
+    kapeyn then sleep | lock | shutdown | nothing
+                                What to do when the time is up, or the download, app or command is done.
+                                Or add it to the others:  kapeyn on 2h --then sleep
+                                                          kapeyn run --then shutdown npm run build
     kapeyn off                  Turn off
     kapeyn toggle               Switch on/off
-    kapeyn run <command...>     Keep awake until the command finishes, e.g.  kapeyn run npm run build
     kapeyn doctor               Check what locks or sleeps this Mac
     kapeyn guide                Open the full guide (also in the menu: Help)
     """
 
-    static func run(_ args: [String]) -> Int32 {
-        guard let verb = args.first?.lowercased() else { return printReply(send("status")) }
+    static func fail(_ message: String) -> Int32 {
+        FileHandle.standardError.write(Data((message + "\n").utf8))
+        return 2
+    }
+
+    static func run(_ raw: [String]) -> Int32 {
+        guard let verb = raw.first?.lowercased() else { return printReply(send("status")) }
+        var args = raw
         switch verb {
         case "help", "-h", "--help":
             print(help)
             return 0
         case "on":
+            guard let then = takeThen(&args, leadingOnly: false) else { return 2 }
+            var reply: String?
             if args.count > 1 {
                 let text = args.dropFirst().joined()
                 guard let minutes = parseDuration(text) else {
-                    FileHandle.standardError.write(Data("kapeyn: couldn't understand \"\(text)\". Try 30m, 2h or 1h30m.\n".utf8))
-                    return 2
+                    return fail("kapeyn: couldn't understand \"\(text)\". Try 30m, 2h or 1h30m.")
                 }
-                return printReply(send("on \(minutes)"))
+                reply = send("on \(minutes)")
+            } else {
+                reply = send("on")
             }
-            return printReply(send("on"))
+            if let word = then.word, reply != nil { reply = send("then " + word) }
+            return printReply(reply)
+        case "until":
+            guard let then = takeThen(&args, leadingOnly: false) else { return 2 }
+            var what = Array(args.dropFirst())
+            if what.first?.lowercased() == "app" { what.removeFirst() }
+            guard let first = what.first?.lowercased() else {
+                return fail("usage: kapeyn until downloads | kapeyn until <app>   (add --then sleep, lock or shutdown)")
+            }
+            var reply = what.count == 1 && (first == "downloads" || first == "download")
+                ? send("until downloads")
+                : send("until app " + what.joined(separator: " "))
+            if let word = then.word, let r = reply, !r.hasPrefix("error") { reply = send("then " + word) }
+            return printReply(reply)
+        case "then":
+            guard let action = DoneAction(word: args.dropFirst().joined(separator: " ")) else {
+                return fail("usage: kapeyn then sleep | lock | shutdown | nothing")
+            }
+            return printReply(send("then " + action.word))
         case "off", "toggle", "status", "guide":
             return printReply(send(verb))
         case "doctor":
@@ -86,17 +120,75 @@ enum CLI {
         }
     }
 
+    /// The result of looking for "--then X": `word` is the action word, or nil if there was no --then.
+    struct ThenOption { let word: String? }
+
+    /// Takes "--then X" or "--then=X" out of args (leadingOnly: only right at the start, for "run", so the
+    /// command's own options are left alone). Returns nil, after printing a message, if X isn't an action.
+    static func takeThen(_ args: inout [String], leadingOnly: Bool) -> ThenOption? {
+        let first = leadingOnly ? 0 : 1 // "run" gets the args after "run"; the others still have the verb
+        var i = first
+        while i < args.count {
+            let a = args[i]
+            var value: String?
+            var take = 0
+            if a.lowercased().hasPrefix("--then=") {
+                value = String(a.dropFirst(7))
+                take = 1
+            } else if a.lowercased() == "--then" {
+                take = 2
+                value = i + 1 < args.count ? args[i + 1] : ""
+                // "--then shut down"
+                if value?.lowercased() == "shut" && i + 2 < args.count && args[i + 2].lowercased() == "down" {
+                    value = "shutdown"
+                    take = 3
+                }
+            }
+            if take == 0 {
+                if leadingOnly { break }
+                i += 1
+                continue
+            }
+            guard let v = value, let action = DoneAction(word: v) else {
+                let shown = value ?? ""
+                FileHandle.standardError.write(Data(("kapeyn: --then needs sleep, lock, shutdown or nothing"
+                    + (shown.isEmpty ? "" : " (not \"\(shown)\")") + ".\n").utf8))
+                return nil
+            }
+            args.removeSubrange(i..<min(i + take, args.count))
+            return ThenOption(word: action.word)
+        }
+        return ThenOption(word: nil)
+    }
+
     static func runCommand(_ raw: [String]) -> Int32 {
         var cmd = raw
+        guard let then = takeThen(&cmd, leadingOnly: true) else { return 2 }
         if cmd.first == "--" { cmd.removeFirst() }
         guard !cmd.isEmpty else {
-            FileHandle.standardError.write(Data("usage: kapeyn run <command...>\n".utf8))
-            return 2
+            return fail("usage: kapeyn run [--then sleep|lock|shutdown] <command...>")
         }
 
         let me = getpid()
         let label = String(URL(fileURLWithPath: cmd[0]).lastPathComponent.prefix(40))
-        let held = send("hold \(me) \(label)") != nil
+        let held: Bool
+        if let word = then.word {
+            // The app watches this process and does the action once it ends.
+            held = send("until pid \(me) \(label)") != nil && send("then " + word) != nil
+            if held {
+                let doing = word == "sleep" ? "put the Mac to sleep" : word == "lock" ? "lock the Mac" : "shut down the Mac"
+                FileHandle.standardError.write(Data(("kapeyn: " + (word == "nothing"
+                    ? "keeping the Mac awake until \(label) finishes."
+                    : "when \(label) finishes, Kapeyn will \(doing).") + "\n").utf8))
+                // Stopped with Ctrl+C: end quietly instead of sleeping or shutting down.
+                signal(SIGINT) { _ in
+                    _ = IPCClient.send("then nothing", timeout: 1)
+                    exit(130)
+                }
+            }
+        } else {
+            held = send("hold \(me) \(label)") != nil
+        }
         var ownAssertion: IOPMAssertionID = 0
         if !held {
             FileHandle.standardError.write(Data("kapeyn: couldn't reach the Kapeyn app; keeping the Mac awake from here instead.\n".utf8))
@@ -116,7 +208,7 @@ enum CLI {
         }
         p.waitUntilExit()
 
-        if held { _ = IPCClient.send("release \(me)", timeout: 2) } else { IOPMAssertionRelease(ownAssertion) }
+        if !held { IOPMAssertionRelease(ownAssertion) } else if then.word == nil { _ = IPCClient.send("release \(me)", timeout: 2) }
         return p.terminationReason == .uncaughtSignal ? 128 + p.terminationStatus : p.terminationStatus
     }
 

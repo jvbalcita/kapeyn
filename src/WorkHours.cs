@@ -177,16 +177,20 @@ namespace Kapeyn
         }
     }
 
-    // "Work hours are over - shutting down in 60 s" with Shut down now / Cancel.
-    sealed class ShutdownForm : Form
+    // "Work hours are over. Kapeyn will shut down this PC in 60 seconds" with Shut down now / Cancel.
+    // Also used for "When it's done": "Downloads finished. Kapeyn will put this PC to sleep in 60 seconds".
+    sealed class CountdownForm : Form
     {
         readonly Label message;
         readonly Timer timer = new Timer();
+        readonly string doing;
         int remaining;
 
-        public ShutdownForm(int seconds)
+        /// heading = "Work hours are over."; doing = "shut down this PC"; button = "Shut down now".
+        public CountdownForm(int seconds, string heading, string doing, string button)
         {
             remaining = seconds;
+            this.doing = doing;
             Font = SystemFonts.MessageBoxFont;
             AutoScaleMode = AutoScaleMode.Font;
             Text = "Kapeyn";
@@ -201,13 +205,13 @@ namespace Kapeyn
             Padding = new Padding(16);
 
             var root = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false };
-            root.Controls.Add(new Label { Text = "Work hours are over.", AutoSize = true, Font = new Font(Font.FontFamily, Font.Size * 1.25f, FontStyle.Bold) });
+            root.Controls.Add(new Label { Text = heading, AutoSize = true, Font = new Font(Font.FontFamily, Font.Size * 1.25f, FontStyle.Bold) });
             message = new Label { AutoSize = true, Margin = new Padding(3, 8, 3, 3) };
             root.Controls.Add(message);
 
             var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 14, 0, 0) };
             var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
-            var now = new Button { Text = "Shut down now", AutoSize = true, DialogResult = DialogResult.OK };
+            var now = new Button { Text = button, AutoSize = true, DialogResult = DialogResult.OK };
             buttons.Controls.Add(cancel);
             buttons.Controls.Add(now);
             root.Controls.Add(buttons);
@@ -231,7 +235,7 @@ namespace Kapeyn
 
         void UpdateText()
         {
-            message.Text = "Kapeyn will shut down this PC in " + Math.Max(0, remaining) + " seconds.\nSave your work, or click Cancel to keep working.";
+            message.Text = "Kapeyn will " + doing + " in " + Math.Max(0, remaining) + " seconds.\nSave your work, or click Cancel to keep working.";
         }
 
         protected override void Dispose(bool disposing)

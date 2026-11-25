@@ -180,6 +180,14 @@ enum SystemActions {
         try? p.run()
     }
 
+    /// Puts the Mac to sleep right away (no admin rights needed).
+    static func sleep() {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        p.arguments = ["sleepnow"]
+        try? p.run()
+    }
+
     /// Asks macOS for a normal shutdown (apps can still ask you to save). Returns an error message on failure.
     /// The first time, macOS asks whether Kapeyn may control System Events.
     static func shutDown() -> String? {

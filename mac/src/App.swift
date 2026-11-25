@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var lastPolicyScan = Date.distantPast
     var shutdownAlert: NSAlert?
     var shutdownRemaining = 0
+    var shutdownDoing = ""
 
     // MARK: menu items
     var statusLine: NSMenuItem!
@@ -42,6 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var toggleItem: NSMenuItem!
     let durationMenu = NSMenu()
     var durationItem: NSMenuItem!
+    let untilMenu = NSMenu()
+    var untilItem: NSMenuItem!
+    var untilDownloadsItem: NSMenuItem!
+    let untilAppMenu = NSMenu()
+    var untilAppItem: NSMenuItem!
+    let thenMenu = NSMenu()
+    var thenItem: NSMenuItem!
     var callItem: NSMenuItem!
     var netItem: NSMenuItem!
     var appsItem: NSMenuItem!
@@ -132,7 +140,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Gather what's happening; the engine decides what it means.
         var auto: [Reason] = []
         if settings.whileCall && Triggers.micInUse() { auto.append(Reason(key: "call", label: "on a call")) }
-        if settings.whileDownloading && net.update() { auto.append(Reason(key: "net", label: "downloading")) }
+        // Sample the network once per check (sampling twice in a row would skew the reading).
+        let downloading = (settings.whileDownloading || engine.until == .downloads) && net.update()
+        if settings.whileDownloading && downloading { auto.append(Reason(key: "net", label: "downloading")) }
         for app in settings.watchApps where Triggers.isRunning(app.id) {
             auto.append(Reason(key: "app:" + app.id, label: app.name + " is open"))
         }
@@ -142,8 +152,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let battery = Triggers.battery()
 
+        // "Keep awake until": is the thing we're waiting for still going?
+        var untilActive = true
+        switch engine.until {
+        case .downloads: untilActive = downloading
+        case .appCloses: untilActive = engine.untilTarget.map { Triggers.isRunning($0) } ?? false
+        case .commandEnds: untilActive = engine.untilTarget.flatMap { Int32($0) }.map { Triggers.isAlive($0) } ?? false
+        case .none: break
+        }
+
         let ev = engine.step(settings: settings, now: now, inWindow: Triggers.inWorkHours(settings, now), auto: auto,
-                             onBattery: battery.onBattery, batteryPercent: battery.percent)
+                             onBattery: battery.onBattery, batteryPercent: battery.percent, untilActive: untilActive)
+        if ev.timerEnded || ev.untilEnded { done(ev) }
         if ev.workHoursEnded { workHoursEnded(ev) }
 
         let screenMayGoOff = locked && settings.screenOffWhenLocked
@@ -160,21 +180,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateUI()
     }
 
+    /// A timer or "Keep awake until" session finished by itself: do what "When it's done" says.
+    func done(_ ev: StepEvents) {
+        switch ev.then {
+        case .lock:
+            if !locked { SystemActions.lockScreen() }
+        case .sleep, .shutDown:
+            let heading = ev.finished
+            let action = ev.then
+            DispatchQueue.main.async { self.countdown(heading: heading, action: action) }
+        case .nothing:
+            break
+        }
+    }
+
     func workHoursEnded(_ ev: StepEvents) {
         if ev.shutdown {
-            DispatchQueue.main.async { self.shutdownCountdown() }
+            DispatchQueue.main.async { self.countdown(heading: "Work hours are over.", action: .shutDown) }
         } else if ev.lock && !locked {
             SystemActions.lockScreen()
         }
     }
 
-    func shutdownCountdown() {
+    /// 60-second countdown with Cancel, then sleep or shut down.
+    func countdown(heading: String, action: DoneAction) {
         guard shutdownAlert == nil else { return }
+        let sleep = action == .sleep
         let alert = NSAlert()
-        alert.messageText = "Work hours are over."
-        alert.addButton(withTitle: "Shut Down Now")
+        alert.messageText = heading
+        alert.addButton(withTitle: sleep ? "Sleep Now" : "Shut Down Now")
         alert.addButton(withTitle: "Cancel")
         shutdownAlert = alert
+        shutdownDoing = sleep ? "put this Mac to sleep" : "shut down this Mac"
         shutdownRemaining = 60
         updateShutdownText()
         let t = Timer(timeInterval: 1, target: self, selector: #selector(shutdownTick), userInfo: nil, repeats: true)
@@ -184,7 +221,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let result = alert.runModal()
         t.invalidate()
         shutdownAlert = nil
-        if result == .alertFirstButtonReturn, let error = SystemActions.shutDown() {
+        guard result == .alertFirstButtonReturn else { return }
+        if sleep {
+            SystemActions.sleep()
+        } else if let error = SystemActions.shutDown() {
             showAlert("Kapeyn couldn't shut down your Mac",
                       "macOS said: \(error)\n\nAllow Kapeyn to control System Events in System Settings > Privacy & Security > Automation.")
         }
@@ -197,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func updateShutdownText() {
-        shutdownAlert?.informativeText = "Kapeyn will shut down this Mac in \(max(0, shutdownRemaining)) seconds.\n"
+        shutdownAlert?.informativeText = "Kapeyn will \(shutdownDoing) in \(max(0, shutdownRemaining)) seconds.\n"
             + "Save your work, or click Cancel to keep working."
     }
 
@@ -212,8 +252,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         evaluate(allowNudge: false)
     }
 
+    func turnOnUntil(_ kind: UntilKind, target: String?, label: String?) {
+        engine.turnOnUntil(kind, target: target, label: label, now: Date())
+        lastNudge = .distantPast
+        evaluate(allowNudge: false)
+    }
+
     func turnOff() {
         engine.turnOff()
+        evaluate(allowNudge: false)
+    }
+
+    func setThen(_ action: DoneAction) {
+        engine.then = action
         evaluate(allowNudge: false)
     }
 
@@ -267,6 +318,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             holds[pid] = nil
             evaluate(allowNudge: false)
             return "ok"
+        case "then":
+            guard let action = DoneAction(word: parts.dropFirst().joined(separator: " ")) else {
+                return "error: expected then sleep | lock | shutdown | nothing"
+            }
+            setThen(action)
+            return "Kapeyn: " + statusText()
+        case "until":
+            return handleUntil(parts.count > 1 ? parts[1].lowercased() : "",
+                               parts.count > 2 ? parts[2].trimmingCharacters(in: .whitespaces) : "")
         case "doctor":
             return doctorReport()
         case "guide":
@@ -275,6 +335,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         default:
             return "error: unknown command \"\(verb)\""
         }
+    }
+
+    /// until downloads | until app <name> | until pid <pid> <label>
+    func handleUntil(_ what: String, _ rest: String) -> String {
+        switch what {
+        case "downloads":
+            turnOnUntil(.downloads, target: nil, label: nil)
+        case "app":
+            let name = rest.trimmingCharacters(in: CharacterSet(charactersIn: "\"' "))
+                .replacingOccurrences(of: ".app", with: "", options: [.caseInsensitive, .anchored, .backwards])
+            guard let app = Triggers.runningApps().first(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame || $0.id.caseInsensitiveCompare(name) == .orderedSame
+            }) else {
+                return "error: no open app called \"\(rest)\". Use the name shown in the Dock, e.g.  kapeyn until \"Final Cut Pro\""
+            }
+            turnOnUntil(.appCloses, target: app.id, label: app.name)
+        case "pid":
+            let p = rest.split(separator: " ", maxSplits: 1).map(String.init)
+            guard let first = p.first, let pid = Int32(first) else { return "error: expected until pid <pid> <label>" }
+            turnOnUntil(.commandEnds, target: String(pid), label: p.count > 1 ? p[1] : "the command")
+        default:
+            return "error: expected until downloads | until app <name>"
+        }
+        return "Kapeyn: " + statusText()
     }
 
     // MARK: text
@@ -406,6 +490,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for m in durations { durationMenu.addItem(item(Format.minutes(m), #selector(pickDuration(_:)), tag: m)) }
         durationItem = submenu("Keep awake for", durationMenu)
         menu.addItem(durationItem)
+
+        // Keep awake until something finishes
+        untilDownloadsItem = item("Downloads finish", #selector(untilDownloads))
+        untilDownloadsItem.toolTip = "Stays awake while files download, and finishes after \(Engine.downloadQuietMinutes) quiet minutes."
+        untilAppMenu.delegate = self
+        untilAppItem = submenu("An app closes", untilAppMenu)
+        untilMenu.addItem(untilDownloadsItem)
+        untilMenu.addItem(untilAppItem)
+        untilItem = submenu("Keep awake until", untilMenu)
+        menu.addItem(untilItem)
+
+        // What to do when a timer or "until" finishes
+        for (index, action) in DoneAction.allCases.enumerated() {
+            thenMenu.addItem(item(thenMenuText(action), #selector(pickThen(_:)), tag: index))
+            if action == .nothing { thenMenu.addItem(.separator()) }
+        }
+        thenItem = submenu("When it's done", thenMenu)
+        menu.addItem(thenItem)
         menu.addItem(.separator())
 
         // Automatic
@@ -464,6 +566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ m: NSMenu) {
         if m === appsMenu { populateApps(); return }
+        if m === untilAppMenu { populateUntilApps(); return }
         guard m === menu else { return }
 
         evaluate(allowNudge: false)
@@ -476,12 +579,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Keep awake for: check the current choice; a timed one also shows the time left.
         let left = manualUntil.map { Format.remaining($0.timeIntervalSinceNow) + " left" }
         for i in durationMenu.items where !i.isSeparatorItem {
-            let current = manualOn && (i.tag == 0 ? manualUntil == nil : manualUntil != nil && manualMinutes == i.tag)
+            let current = manualOn && (i.tag == 0
+                ? manualUntil == nil && engine.until == .none
+                : manualUntil != nil && manualMinutes == i.tag)
             i.state = current ? .on : .off
             let label = i.tag == 0 ? "Until I turn it off" : Format.minutes(i.tag)
             i.title = current && i.tag > 0 ? "\(label)  (\(left ?? ""))" : label
         }
         durationItem.title = manualOn && left != nil ? "Keep awake for (\(left!))" : "Keep awake for"
+
+        // Keep awake until: check and name the current choice.
+        let untilOn = manualOn && engine.until != .none
+        untilDownloadsItem.state = untilOn && engine.until == .downloads ? .on : .off
+        untilAppItem.state = untilOn && engine.until == .appCloses ? .on : .off
+        untilItem.title = untilOn ? "Keep awake until " + (engine.untilText() ?? "") : "Keep awake until"
+
+        // When it's done: applies to a timer or an "until"; shown on the menu so it's never a surprise.
+        for i in thenMenu.items where !i.isSeparatorItem {
+            i.state = DoneAction.allCases[i.tag] == engine.then ? .on : .off
+        }
+        thenItem.title = engine.then == .nothing ? "When it's done" : "When it's done: " + thenMenuText(engine.then)
 
         callItem.state = settings.whileCall ? .on : .off
         netItem.state = settings.whileDownloading ? .on : .off
@@ -542,12 +659,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appsMenu.addItem(submenu("Add an open app", addMenu))
     }
 
+    func thenMenuText(_ action: DoneAction) -> String {
+        switch action {
+        case .sleep: return "Sleep"
+        case .lock: return "Lock the Mac"
+        case .shutDown: return "Shut down"
+        case .nothing: return "Do nothing"
+        }
+    }
+
+    func populateUntilApps() {
+        untilAppMenu.removeAllItems()
+        for app in Triggers.runningApps() {
+            let i = item(app.name, #selector(untilApp(_:)))
+            i.representedObject = app.id
+            i.state = manualOn && engine.until == .appCloses && engine.untilTarget == app.id ? .on : .off
+            untilAppMenu.addItem(i)
+        }
+        if untilAppMenu.items.isEmpty {
+            let none = item("No open apps", nil)
+            none.isEnabled = false
+            untilAppMenu.addItem(none)
+        }
+    }
+
     // MARK: actions
 
     func changed() { evaluate(allowNudge: false) }
 
     @objc func toggleClicked() { toggle() }
     @objc func pickDuration(_ sender: NSMenuItem) { turnOn(sender.tag == 0 ? nil : sender.tag) }
+    @objc func untilDownloads() { turnOnUntil(.downloads, target: nil, label: nil) }
+    @objc func untilApp(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        turnOnUntil(.appCloses, target: id, label: sender.title)
+    }
+    @objc func pickThen(_ sender: NSMenuItem) {
+        guard DoneAction.allCases.indices.contains(sender.tag) else { return }
+        setThen(DoneAction.allCases[sender.tag])
+    }
     @objc func toggleCall() { settings.whileCall.toggle(); changed() }
     @objc func toggleNet() { settings.whileDownloading.toggle(); changed() }
     @objc func toggleSchedule() { settings.scheduleEnabled.toggle(); changed() }
