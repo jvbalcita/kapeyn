@@ -1,8 +1,8 @@
 # Homebrew formula for Kapeyn. Install with:
-#   brew tap jvbalcita/kapeyn https://github.com/jvbalcita/kapeyn
-#   brew install kapeyn
+#   brew install jvbalcita/kapeyn/kapeyn
 # Kapeyn is built on your Mac from source, so macOS shows no "unverified developer" warning.
-# The release workflow updates url/sha256 below on every new version.
+# This file is kept in github.com/jvbalcita/kapeyn. On every new version, the release workflow
+# updates url/sha256 below and copies it to github.com/jvbalcita/homebrew-kapeyn, the tap brew reads.
 class Kapeyn < Formula
   desc "Keep your Mac awake, intelligently (menu bar app and kapeyn command)"
   homepage "https://github.com/jvbalcita/kapeyn"
