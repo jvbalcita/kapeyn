@@ -22,7 +22,7 @@ $date = ([datetime]$release.published_at).ToString('yyyy-MM-dd')
 
 $dir = Join-Path $PSScriptRoot "manifests\k\Kapeyn\Kapeyn\$Version"
 New-Item -ItemType Directory -Force $dir | Out-Null
-$schema = '1.9.0'
+$schema = '1.28.0'
 
 $files = @{
 "$id.yaml" = @"
