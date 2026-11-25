@@ -4,3 +4,6 @@ dist/
 mac/obj/
 mac/dist/
 .claude/
+
+# generated winget manifests (submitted to microsoft/winget-pkgs, not kept here)
+packaging/winget/manifests/
