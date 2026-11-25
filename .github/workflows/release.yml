@@ -1,7 +1,7 @@
 # On every push to main and every pull request: run the tests, build both apps, and check that all three
 # install paths (Windows one-liner, Mac one-liner, Homebrew) work against the latest published release.
 # On a version tag (v2.3.0, ...): also publish a GitHub Release with the downloads, installers and checksums,
-# then point the Homebrew formula at the new version.
+# then point the Homebrew formula at the new version and copy it to the jvbalcita/homebrew-kapeyn tap.
 name: Build & Release
 
 on:
@@ -151,6 +151,12 @@ jobs:
           kapeyn help
           brew test local/kapeyn/kapeyn
           brew uninstall kapeyn
+      - name: Homebrew install from the published tap (one command)
+        run: |
+          brew install jvbalcita/kapeyn/kapeyn
+          kapeyn help
+          brew uninstall kapeyn
+          brew untap jvbalcita/kapeyn
 
   # ---- release (tags only) -----------------------------------------------------------------------
 
@@ -197,7 +203,7 @@ jobs:
 
             **Homebrew:**
             ```bash
-            brew tap jvbalcita/kapeyn https://github.com/jvbalcita/kapeyn && brew install kapeyn
+            brew install jvbalcita/kapeyn/kapeyn
             ```
 
             Both installers check every download against `SHA256SUMS.txt`.
@@ -226,4 +232,24 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "Homebrew: kapeyn ${GITHUB_REF_NAME}"
+          git push origin HEAD:main
+      - name: Copy the formula to the tap (jvbalcita/homebrew-kapeyn)
+        env:
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          # brew install jvbalcita/kapeyn/kapeyn reads the formula from the homebrew-kapeyn repository.
+          # HOMEBREW_TAP_DEPLOY_KEY is a deploy key with write access to that repository only.
+          if [ -z "$TAP_KEY" ]; then
+            echo "::error::The HOMEBREW_TAP_DEPLOY_KEY secret isn't set, so jvbalcita/homebrew-kapeyn still has the old version."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && printf '%s\n' "$TAP_KEY" > ~/.ssh/tap_key && chmod 600 ~/.ssh/tap_key
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/tap_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone -q git@github.com:jvbalcita/homebrew-kapeyn.git "$RUNNER_TEMP/tap"
+          cp Formula/kapeyn.rb "$RUNNER_TEMP/tap/Formula/kapeyn.rb"
+          cd "$RUNNER_TEMP/tap"
+          if git diff --quiet; then echo "The tap already has ${GITHUB_REF_NAME}."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "kapeyn ${GITHUB_REF_NAME}"
           git push origin HEAD:main

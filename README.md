@@ -119,9 +119,10 @@ curl -fsSL https://github.com/jvbalcita/kapeyn/releases/latest/download/install-
 **Homebrew:**
 
 ```bash
-brew tap jvbalcita/kapeyn https://github.com/jvbalcita/kapeyn
-brew install kapeyn
+brew install jvbalcita/kapeyn/kapeyn
 ```
+
+<sub>This uses the [jvbalcita/homebrew-kapeyn](https://github.com/jvbalcita/homebrew-kapeyn) tap, which each release updates. A plain `brew install kapeyn` doesn't work, because Kapeyn isn't in Homebrew's built-in catalog. If you tapped this repository directly before (`brew tap jvbalcita/kapeyn https://github.com/jvbalcita/kapeyn`), that keeps working.</sub>
 
 | | Windows one-liner | Mac one-liner | Homebrew |
 |---|---|---|---|
@@ -521,7 +522,7 @@ kapeyn/
 │   └── install.sh          installs for the current user
 ├── help/help.md            the in-app guide (shared by both apps)
 ├── docs/images/            README images
-├── Formula/kapeyn.rb       Homebrew formula (tap this repository)
+├── Formula/kapeyn.rb       Homebrew formula (copied to jvbalcita/homebrew-kapeyn on release)
 ├── mac/get.sh              Mac one-line installer (published as install-mac.sh)
 ├── build.ps1 / install.ps1 Windows build and (one-line) install scripts
 ├── LICENSE                 MIT License
@@ -539,7 +540,7 @@ git push origin v2.2.0
 
 The workflow:
 - publishes `Kapeyn.exe`, `Kapeyn-Windows.zip`, `Kapeyn-macOS.zip`, the one-line installers (`install.ps1`, `install-mac.sh`) and `SHA256SUMS.txt` as a new GitHub Release
-- points the Homebrew formula (`Formula/kapeyn.rb`) at the new version
+- points the Homebrew formula (`Formula/kapeyn.rb`) at the new version and copies it to the [homebrew-kapeyn](https://github.com/jvbalcita/homebrew-kapeyn) tap
 
 Every push and pull request also tests all three install paths on real Windows and Mac machines. Remember to bump the version in `src/Program.cs` and `mac/build.sh` first.
 
