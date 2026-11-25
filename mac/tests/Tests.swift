@@ -352,7 +352,7 @@ func helpTests() {
         return
     }
     let topics = HelpContent.parse(text)
-    eq("11 topics", 11, topics.count)
+    eq("12 topics", 12, topics.count)
     check("topic titles are unique", Set(topics.map { $0.title }).count == topics.count)
     check("every topic has text", topics.allSatisfy { $0.lines.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty } })
     let all = topics.map { ([$0.title] + $0.lines).joined(separator: "\n") }.joined(separator: "\n")
@@ -360,4 +360,145 @@ func helpTests() {
     check("no [win]/[mac] markers or comments left", !all.contains("[win]") && !all.contains("[mac]") && !all.contains("%%"))
     check("no Windows-only text on a Mac", !all.contains("Ctrl+Alt+K") && !all.contains("Activity method") && !all.contains("install.ps1"))
     check("Mac wording is used", all.contains("⌃⌥K") && all.contains("Start at login") && all.contains("Control-click"))
+}
+
+// MARK: when it's done
+
+@discardableResult
+func stepUntil(_ e: Engine, _ s: Settings, _ t: Date, _ active: Bool) -> StepEvents {
+    return e.step(settings: s, now: t, inWindow: false, auto: [], onBattery: false, batteryPercent: -1, untilActive: active)
+}
+
+func engineWhenDone() {
+    let (s, cleanup) = engineSettings()
+    defer { cleanup() }
+    func mins(_ m: Double) -> Date { return t0.addingTimeInterval(m * 60) }
+
+    // A timer with an action
+    var e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.turnOn(minutes: 60, now: t0)
+    e.then = .sleep
+    step(e, s, t0)
+    eq("timer + sleep: status says what happens", "Awake - 1 h left, then sleep", e.statusText())
+    var ev = step(e, s, mins(60))
+    check("timer + sleep: ends and asks to sleep", ev.timerEnded && ev.then == .sleep && !e.awake)
+    eq("timer: what finished", "Timer finished.", ev.finished)
+    eq("the action resets after it's used", DoneAction.nothing, e.then)
+    e.turnOn(minutes: 30, now: mins(61))
+    ev = step(e, s, mins(91))
+    check("the next timer doesn't repeat the old action", ev.timerEnded && ev.then == .nothing)
+
+    // Turning off by hand never runs the action
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.turnOn(minutes: 60, now: t0)
+    e.then = .shutDown
+    e.turnOff()
+    eq("turning off by hand drops the action", DoneAction.nothing, e.then)
+    ev = step(e, s, mins(60))
+    check("...and nothing happens later", !ev.timerEnded && !ev.untilEnded)
+
+    // "Until I turn it off" has no end, so the action isn't shown
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.turnOn(minutes: nil, now: t0)
+    e.then = .lock
+    step(e, s, t0)
+    eq("no end: plain 'Awake'", "Awake", e.statusText())
+
+    // An action chosen first still applies; a timer replaces an "until"
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.then = .lock
+    e.turnOnUntil(.downloads, target: nil, label: nil, now: t0)
+    stepUntil(e, s, t0, true)
+    eq("action chosen first still applies", "Awake - until downloads finish, then lock", e.statusText())
+    e.turnOn(minutes: 30, now: t0)
+    check("a timer replaces the 'until'", e.until == .none && e.manualUntil != nil)
+
+    // Downloads: finish after a quiet stretch, not at the first pause
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.turnOnUntil(.downloads, target: nil, label: nil, now: t0)
+    stepUntil(e, s, t0, true)
+    eq("downloads: status", "Awake - until downloads finish", e.statusText())
+    check("downloads: no end time, no timer choice", e.manualUntil == nil && e.manualMinutes == nil)
+    stepUntil(e, s, mins(1), false)
+    ev = stepUntil(e, s, mins(2), false)
+    check("downloads: a 1-minute pause doesn't end it", !ev.untilEnded && e.awake)
+    stepUntil(e, s, mins(2.5), true)
+    stepUntil(e, s, mins(3), false)
+    ev = stepUntil(e, s, mins(4.9), false)
+    check("downloads: traffic again restarts the quiet clock", !ev.untilEnded)
+    ev = stepUntil(e, s, mins(5), false)
+    check("downloads: 2 quiet minutes ends it", ev.untilEnded && !e.awake)
+    eq("downloads: what finished", "Downloads finished.", ev.finished)
+
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.turnOnUntil(.downloads, target: nil, label: nil, now: t0)
+    stepUntil(e, s, t0, false)
+    ev = stepUntil(e, s, mins(Double(Engine.downloadQuietMinutes)), false)
+    check("downloads: nothing downloading at all ends after the quiet stretch", ev.untilEnded)
+
+    // An app closing
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.turnOnUntil(.appCloses, target: "com.apple.FinalCut", label: "Final Cut Pro", now: t0)
+    e.then = .shutDown
+    stepUntil(e, s, t0, true)
+    eq("app: status", "Awake - until Final Cut Pro closes, then shut down", e.statusText())
+    ev = stepUntil(e, s, t0.addingTimeInterval(5), false)
+    check("app closed: ends right away and asks to shut down", ev.untilEnded && ev.then == .shutDown)
+    eq("app: what finished", "Final Cut Pro closed.", ev.finished)
+    check("app: the 'until' is cleared", e.until == .none && e.untilLabel == nil)
+
+    // A command (kapeyn run --then)
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: false)
+    e.turnOnUntil(.commandEnds, target: "4242", label: "npm", now: t0)
+    e.then = .lock
+    stepUntil(e, s, t0, true)
+    eq("command: status", "Awake - until npm finishes, then lock", e.statusText())
+    ev = stepUntil(e, s, t0.addingTimeInterval(5), false)
+    check("command ended: asks to lock", ev.untilEnded && ev.then == .lock)
+    eq("command: what finished", "npm finished.", ev.finished)
+
+    // Work hours ending wins and drops the action
+    s.scheduleEnabled = true
+    e = Engine(computer: "Mac", inWorkHoursWindowNow: true)
+    e.turnOnUntil(.downloads, target: nil, label: nil, now: t0)
+    e.then = .shutDown
+    e.step(settings: s, now: t0, inWindow: true, auto: [], onBattery: false, batteryPercent: -1, untilActive: true)
+    ev = e.step(settings: s, now: t0.addingTimeInterval(5), inWindow: false, auto: [], onBattery: false,
+                batteryPercent: -1, untilActive: true)
+    check("work hours end: their own action, not 'When it's done'", ev.workHoursEnded && !ev.untilEnded)
+    eq("work hours end: action dropped", DoneAction.nothing, e.then)
+    s.scheduleEnabled = false
+
+    // Words
+    check("'sleep' is understood", DoneAction(word: "sleep") == .sleep)
+    check("'Shut Down' is understood", DoneAction(word: "Shut Down") == .shutDown)
+    check("'shut-down' is understood", DoneAction(word: "shut-down") == .shutDown)
+    check("'nothing' is understood", DoneAction(word: "nothing") == .nothing)
+    check("'explode' is rejected", DoneAction(word: "explode") == nil)
+}
+
+func thenOptionTests() {
+    func ok(_ name: String, _ input: [String], leadingOnly: Bool, _ then: String?, _ rest: String) {
+        var args = input
+        let r = CLI.takeThen(&args, leadingOnly: leadingOnly)
+        check(name, r != nil && r?.word == then && args.joined(separator: " ") == rest,
+              "then=\(r?.word ?? "nil"), rest=\(args.joined(separator: " "))")
+    }
+    ok("on 2h --then sleep", ["on", "2h", "--then", "sleep"], leadingOnly: false, "sleep", "on 2h")
+    ok("--then before the time", ["on", "--then", "lock", "2h"], leadingOnly: false, "lock", "on 2h")
+    ok("--then=shutdown", ["on", "1h", "--then=shutdown"], leadingOnly: false, "shutdown", "on 1h")
+    ok("--then shut down (two words)", ["until", "downloads", "--then", "shut", "down"], leadingOnly: false, "shutdown", "until downloads")
+    ok("no --then", ["on", "30m"], leadingOnly: false, nil, "on 30m")
+    ok("run: --then before the command", ["--then", "sleep", "npm", "run", "build"], leadingOnly: true, "sleep", "npm run build")
+    ok("run: the command's own --then is left alone", ["mytool", "--then", "sleep"], leadingOnly: true, nil, "mytool --then sleep")
+
+    var bad = ["on", "2h", "--then", "explode"]
+    let saved = dup(STDERR_FILENO)
+    let devNull = open("/dev/null", O_WRONLY)
+    dup2(devNull, STDERR_FILENO)
+    let r = CLI.takeThen(&bad, leadingOnly: false)
+    dup2(saved, STDERR_FILENO)
+    close(devNull)
+    close(saved)
+    check("an unknown action is rejected", r == nil)
 }

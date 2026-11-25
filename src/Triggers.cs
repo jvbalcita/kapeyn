@@ -124,6 +124,9 @@ namespace Kapeyn
                     {
                         string d = p.MainModule.FileVersionInfo.FileDescription;
                         if (!string.IsNullOrEmpty(d) && d.Trim().Length > 0) label = d.Trim();
+                        // Some apps describe themselves as "Notepad.exe"; show "Notepad".
+                        if (label.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && label.Length > 4)
+                            label = label.Substring(0, label.Length - 4);
                     }
                     catch { }
                     byName[name] = new WatchedApp { Name = name, Label = Settings.Clean(label) };

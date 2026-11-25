@@ -45,6 +45,7 @@ namespace Kapeyn
 
         // ---- menu items ----------------------------------------------------------------------
         ToolStripMenuItem statusItem, detailItem, toggleItem, durationMenu;
+        ToolStripMenuItem untilMenu, untilDownloadsItem, untilAppMenu, thenMenu;
         ToolStripMenuItem callItem, netItem, appsMenu, scheduleItem;
         ToolStripMenuItem screenItem, activityItem, methodMenu, intervalMenu, lockedItem, batteryMenu,
                           hotkeyItem, startActiveItem, startupItem;
@@ -132,7 +133,9 @@ namespace Kapeyn
                 if (Triggers.MicInUse(out who))
                     auto.Add(new Reason("call", who == null ? "on a call" : "on a call (" + who + ")"));
             }
-            if (settings.WhileDownloading && net.Update()) auto.Add(new Reason("net", "downloading"));
+            // Sample the network once per check (sampling twice in a row would skew the reading).
+            bool downloading = (settings.WhileDownloading || engine.Until == UntilKind.Downloads) && net.Update();
+            if (settings.WhileDownloading && downloading) auto.Add(new Reason("net", "downloading"));
             foreach (var app in settings.WatchApps)
                 if (Triggers.IsRunning(app.Name))
                     auto.Add(new Reason("app:" + app.Name.ToLowerInvariant(), app.Label + " is open"));
@@ -144,9 +147,21 @@ namespace Kapeyn
             int pct;
             bool onBattery = Triggers.OnBattery(out pct);
 
-            StepEvents ev = engine.Step(settings, now, Triggers.InWorkHours(settings, now), auto, onBattery, pct);
+            // "Keep awake until": is the thing we're waiting for still going?
+            bool untilActive = true;
+            switch (engine.Until)
+            {
+                case UntilKind.Downloads: untilActive = downloading; break;
+                case UntilKind.AppCloses: untilActive = Triggers.IsRunning(engine.UntilTarget); break;
+                case UntilKind.CommandEnds:
+                    int cmdPid;
+                    untilActive = int.TryParse(engine.UntilTarget, out cmdPid) && Triggers.IsAlive(cmdPid);
+                    break;
+            }
 
-            if (ev.TimerEnded) Notify("Kapeyn", "Timer finished. Your PC can sleep again.");
+            StepEvents ev = engine.Step(settings, now, Triggers.InWorkHours(settings, now), auto, onBattery, pct, untilActive);
+
+            if (ev.TimerEnded || ev.UntilEnded) OnDone(ev);
             if (ev.WorkHoursEnded) OnWorkHoursEnded(ev);
             if (ev.PauseStarted)
                 Notify("Kapeyn paused", "Battery is at " + pct + "%, so your PC may sleep. Click the cup to keep it awake anyway.");
@@ -166,11 +181,32 @@ namespace Kapeyn
             UpdateUi();
         }
 
+        /// A timer or "Keep awake until" session finished by itself: do what "When it's done" says.
+        void OnDone(StepEvents ev)
+        {
+            switch (ev.Then)
+            {
+                case DoneAction.Lock:
+                    Notify("Kapeyn", ev.Finished + " Kapeyn locked your PC.");
+                    if (!locked) Native.LockWorkStation();
+                    break;
+                case DoneAction.Sleep:
+                case DoneAction.ShutDown:
+                    DoneAction action = ev.Then;
+                    string heading = ev.Finished;
+                    invoker.BeginInvoke(new Action(delegate { Countdown(heading, action); }));
+                    break;
+                default:
+                    Notify("Kapeyn", ev.Finished + " Your PC can sleep again.");
+                    break;
+            }
+        }
+
         void OnWorkHoursEnded(StepEvents ev)
         {
             if (ev.Shutdown)
             {
-                invoker.BeginInvoke(new Action(ShutdownCountdown));
+                invoker.BeginInvoke(new Action(delegate { Countdown("Work hours are over.", DoneAction.ShutDown); }));
             }
             else if (ev.Lock)
             {
@@ -183,15 +219,28 @@ namespace Kapeyn
             }
         }
 
-        void ShutdownCountdown()
+        /// 60-second countdown with Cancel, then sleep or shut down.
+        void Countdown(string heading, DoneAction action)
         {
             if (shutdownPending) return;
             shutdownPending = true;
+            bool sleep = action == DoneAction.Sleep;
             try
             {
                 DialogResult result;
-                using (var f = new ShutdownForm(60)) result = f.ShowDialog();
-                if (result == DialogResult.OK)
+                using (var f = new CountdownForm(60, heading,
+                           sleep ? "put this PC to sleep" : "shut down this PC",
+                           sleep ? "Sleep now" : "Shut down now"))
+                    result = f.ShowDialog();
+                if (result != DialogResult.OK)
+                {
+                    Notify("Kapeyn", (sleep ? "Sleep" : "Shutdown") + " cancelled. Kapeyn is off; your PC may sleep.");
+                }
+                else if (sleep)
+                {
+                    Native.Sleep();
+                }
+                else
                 {
                     // Normal (not forced) shutdown: apps with unsaved work can still stop it.
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe", "/s /t 0")
@@ -200,14 +249,10 @@ namespace Kapeyn
                         CreateNoWindow = true,
                     });
                 }
-                else
-                {
-                    Notify("Kapeyn", "Shutdown cancelled. Kapeyn is off; your PC may sleep.");
-                }
             }
             catch (Exception ex)
             {
-                Notify("Kapeyn", "Couldn't shut down: " + ex.Message);
+                Notify("Kapeyn", "Couldn't " + (sleep ? "sleep" : "shut down") + ": " + ex.Message);
             }
             finally { shutdownPending = false; }
         }
@@ -239,9 +284,22 @@ namespace Kapeyn
             Evaluate(false);
         }
 
+        void TurnOnUntil(UntilKind kind, string target, string label)
+        {
+            engine.TurnOnUntil(kind, target, label, DateTime.Now);
+            lastNudge = DateTime.MinValue;
+            Evaluate(false);
+        }
+
         void TurnOff()
         {
             engine.TurnOff();
+            Evaluate(false);
+        }
+
+        void SetThen(DoneAction action)
+        {
+            engine.Then = action;
             Evaluate(false);
         }
 
@@ -329,6 +387,15 @@ namespace Kapeyn
                         return "ok";
                     }
                     return "error: expected release <pid>";
+                case "then":
+                    DoneAction action;
+                    if (parts.Length < 2 || !Engine.TryParseThen(string.Join(" ", parts.Skip(1).ToArray()), out action))
+                        return "error: expected then sleep | lock | shutdown | nothing";
+                    SetThen(action);
+                    return "Kapeyn: " + StatusLine();
+                case "until":
+                    return HandleUntil(parts.Length > 1 ? parts[1].ToLowerInvariant() : "",
+                                       parts.Length > 2 ? parts[2].Trim() : "");
                 case "doctor":
                     return Doctor.Report(settings, awake, StatusLine(), EffectiveNudgeSeconds, settings.NudgeSeconds == 0, true);
                 case "guide":
@@ -337,6 +404,44 @@ namespace Kapeyn
                 default:
                     return "error: unknown command \"" + verb + "\"";
             }
+        }
+
+        /// until downloads | until app <name> | until pid <pid> <label>
+        string HandleUntil(string what, string rest)
+        {
+            switch (what)
+            {
+                case "downloads":
+                    TurnOnUntil(UntilKind.Downloads, null, null);
+                    return "Kapeyn: " + StatusLine();
+                case "app":
+                    WatchedApp app = FindOpenApp(rest);
+                    if (app == null) return "error: no open app called \"" + rest + "\". Check the name in Task Manager.";
+                    TurnOnUntil(UntilKind.AppCloses, app.Name, app.Label);
+                    return "Kapeyn: " + StatusLine();
+                case "pid":
+                    string[] p = rest.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+                    int pid;
+                    if (p.Length == 0 || !int.TryParse(p[0], out pid)) return "error: expected until pid <pid> <label>";
+                    TurnOnUntil(UntilKind.CommandEnds, pid.ToString(), p.Length > 1 ? p[1] : "the command");
+                    return "Kapeyn: " + StatusLine();
+                default:
+                    return "error: expected until downloads | until app <name>";
+            }
+        }
+
+        /// An open app by its process name ("chrome", "chrome.exe") or the name Kapeyn shows ("Google Chrome").
+        static WatchedApp FindOpenApp(string name)
+        {
+            string n = (name ?? "").Trim().Trim('"');
+            if (n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) n = n.Substring(0, n.Length - 4);
+            if (n.Length == 0) return null;
+            var open = Triggers.RunningWindowApps();
+            var match = open.FirstOrDefault(a => string.Equals(a.Name, n, StringComparison.OrdinalIgnoreCase))
+                     ?? open.FirstOrDefault(a => string.Equals(a.Label, n, StringComparison.OrdinalIgnoreCase));
+            if (match != null) return match;
+            // Background programs without a window (a download tool, a render job) by process name.
+            return Triggers.IsRunning(n) ? new WatchedApp { Name = n, Label = n } : null;
         }
 
         void Exit()
@@ -452,6 +557,30 @@ namespace Kapeyn
                 durationMenu.DropDownItems.Add(it);
             }
             m.Items.Add(durationMenu);
+
+            // Keep awake until something finishes
+            untilMenu = new ToolStripMenuItem("Keep awake until");
+            untilDownloadsItem = Item("Downloads finish", delegate { TurnOnUntil(UntilKind.Downloads, null, null); });
+            untilDownloadsItem.ToolTipText = "Stays awake while files download, and finishes after " +
+                                             Engine.DownloadQuietMinutes + " quiet minutes.";
+            untilAppMenu = new ToolStripMenuItem("An app closes");
+            untilAppMenu.DropDownItems.Add(Info("..."));
+            untilAppMenu.DropDownOpening += delegate { PopulateUntilApps(); };
+            untilMenu.DropDownItems.Add(untilDownloadsItem);
+            untilMenu.DropDownItems.Add(untilAppMenu);
+            m.Items.Add(untilMenu);
+
+            // What to do when a timer or "until" finishes
+            thenMenu = new ToolStripMenuItem("When it's done");
+            foreach (DoneAction a in new[] { DoneAction.Nothing, DoneAction.Sleep, DoneAction.Lock, DoneAction.ShutDown })
+            {
+                DoneAction action = a;
+                var it = Sticky(ThenMenuText(action), delegate { SetThen(action); });
+                it.Tag = action;
+                thenMenu.DropDownItems.Add(it);
+                if (action == DoneAction.Nothing) thenMenu.DropDownItems.Add(new ToolStripSeparator());
+            }
+            m.Items.Add(thenMenu);
             m.Items.Add(new ToolStripSeparator());
 
             // Automatic
@@ -573,6 +702,31 @@ namespace Kapeyn
             }
         }
 
+        static string ThenMenuText(DoneAction a)
+        {
+            switch (a)
+            {
+                case DoneAction.Sleep: return "Sleep";
+                case DoneAction.Lock: return "Lock the PC";
+                case DoneAction.ShutDown: return "Shut down";
+                default: return "Do nothing";
+            }
+        }
+
+        void PopulateUntilApps()
+        {
+            untilAppMenu.DropDownItems.Clear();
+            foreach (var app in Triggers.RunningWindowApps())
+            {
+                var a = app;
+                var it = Item(a.Label, delegate { TurnOnUntil(UntilKind.AppCloses, a.Name, a.Label); });
+                it.Checked = manualOn && engine.Until == UntilKind.AppCloses &&
+                             string.Equals(engine.UntilTarget, a.Name, StringComparison.OrdinalIgnoreCase);
+                untilAppMenu.DropDownItems.Add(it);
+            }
+            if (untilAppMenu.DropDownItems.Count == 0) untilAppMenu.DropDownItems.Add(Info("No open apps"));
+        }
+
         void AddMethod(string label, NudgeMethod method)
         {
             var item = Sticky(label, delegate { settings.Method = method; Changed(); });
@@ -623,7 +777,7 @@ namespace Kapeyn
                 if (mi == null) continue;
                 int minutes = (int)mi.Tag;
                 bool current = manualOn && (minutes == 0
-                    ? !manualUntil.HasValue
+                    ? !manualUntil.HasValue && engine.Until == UntilKind.None
                     : manualUntil.HasValue && manualMinutes == minutes);
                 mi.Checked = current;
                 string label = minutes == 0 ? "Until I turn it off" : Format.Minutes(minutes);
@@ -634,6 +788,22 @@ namespace Kapeyn
             durationMenu.Text = manualOn && manualUntil.HasValue
                 ? "Keep awake for (" + Format.Remaining(manualUntil.Value - DateTime.Now) + " left)"
                 : "Keep awake for";
+
+            // Keep awake until: check and name the current choice.
+            bool until = manualOn && engine.Until != UntilKind.None;
+            untilDownloadsItem.Checked = until && engine.Until == UntilKind.Downloads;
+            untilAppMenu.Checked = until && engine.Until == UntilKind.AppCloses;
+            untilMenu.Text = until ? "Keep awake until " + engine.UntilText() : "Keep awake until";
+
+            // When it's done: applies to a timer or an "until"; shown on the menu so it's never a surprise.
+            foreach (ToolStripItem i in thenMenu.DropDownItems)
+            {
+                var mi = i as ToolStripMenuItem;
+                if (mi != null) mi.Checked = (DoneAction)mi.Tag == engine.Then;
+            }
+            thenMenu.Text = engine.Then == DoneAction.Nothing
+                ? "When it's done"
+                : "When it's done: " + ThenMenuText(engine.Then);
 
             callItem.Checked = settings.WhileCall;
             netItem.Checked = settings.WhileDownloading;

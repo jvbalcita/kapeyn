@@ -57,6 +57,8 @@ namespace Kapeyn.Tests
             T.Run("Engine: automatic reasons and snooze", EngineTests.Snooze);
             T.Run("Engine: end of work hours", EngineTests.WorkHoursEnd);
             T.Run("Engine: low battery", EngineTests.Battery);
+            T.Run("Engine: when it's done (sleep, lock, shut down)", EngineTests.WhenDone);
+            T.Run("Command line: --then", ThenOptionTests.Run);
             T.Run("Formatting", FormatTests.Run);
             T.Run("Duration parsing (kapeyn on 1h30m)", DurationTests.Run);
             T.Run("Settings: save, load, migrate", SettingsTests.Run);

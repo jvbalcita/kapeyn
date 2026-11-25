@@ -172,6 +172,21 @@ namespace Kapeyn
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool LockWorkStation();
 
+        [DllImport("user32.dll")]
+        static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        /// Puts the PC to sleep. PCs with Modern Standby (most newer laptops) may refuse a direct sleep
+        /// request; turning the screen off puts those to sleep instead.
+        public static void Sleep()
+        {
+            bool ok = false;
+            try { ok = System.Windows.Forms.Application.SetSuspendState(System.Windows.Forms.PowerState.Suspend, false, false); }
+            catch { }
+            if (!ok)
+                PostMessage((IntPtr)0xFFFF /* HWND_BROADCAST */, 0x0112 /* WM_SYSCOMMAND */,
+                            (IntPtr)0xF170 /* SC_MONITORPOWER */, (IntPtr)2 /* off */);
+        }
+
         // ---- real file paths (through symbolic links) ------------------------------------------
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share,

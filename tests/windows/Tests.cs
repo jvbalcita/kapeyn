@@ -270,6 +270,148 @@ namespace Kapeyn.Tests
             T.Check("not paused when there's nothing to keep awake", !e3.Paused);
             T.Eq("Mac wording", "Off - Mac may sleep", new Engine("Mac", false).StatusLine());
         }
+
+        static StepEvents StepUntil(Engine e, Settings s, DateTime t, bool active)
+        {
+            return e.Step(s, t, false, None, false, -1, active);
+        }
+
+        public static void WhenDone()
+        {
+            var s = S();
+
+            // A timer with an action
+            var e = new Engine("PC", false);
+            e.TurnOn(60, T0);
+            e.Then = DoneAction.Sleep;
+            Step(e, s, T0);
+            T.Eq("timer + sleep: status says what happens", "Awake - 1 h left, then sleep", e.StatusLine());
+            var ev = Step(e, s, T0.AddMinutes(60));
+            T.Check("timer + sleep: ends and asks to sleep", ev.TimerEnded && ev.Then == DoneAction.Sleep && !e.Awake);
+            T.Eq("timer: what finished", "Timer finished.", ev.Finished);
+            T.Eq("the action resets after it's used", DoneAction.Nothing, e.Then);
+            e.TurnOn(30, T0.AddMinutes(61));
+            ev = Step(e, s, T0.AddMinutes(91));
+            T.Check("the next timer doesn't repeat the old action", ev.TimerEnded && ev.Then == DoneAction.Nothing);
+
+            // Turning off by hand never runs the action
+            e = new Engine("PC", false);
+            e.TurnOn(60, T0);
+            e.Then = DoneAction.ShutDown;
+            e.TurnOff();
+            T.Eq("turning off by hand drops the action", DoneAction.Nothing, e.Then);
+            ev = Step(e, s, T0.AddMinutes(60));
+            T.Check("...and nothing happens later", !ev.TimerEnded && !ev.UntilEnded);
+
+            // "Until I turn it off" has no end, so the action is kept but not shown
+            e = new Engine("PC", false);
+            e.TurnOn(null, T0);
+            e.Then = DoneAction.Lock;
+            Step(e, s, T0);
+            T.Eq("no end: plain 'Awake'", "Awake", e.StatusLine());
+
+            // Picking a new session keeps a chosen action (it's on the menu), switching modes clears the old one
+            e = new Engine("PC", false);
+            e.Then = DoneAction.Lock;
+            e.TurnOnUntil(UntilKind.Downloads, null, null, T0);
+            StepUntil(e, s, T0, true);
+            T.Eq("action chosen first still applies", "Awake - until downloads finish, then lock", e.StatusLine());
+            e.TurnOn(30, T0);
+            T.Check("a timer replaces the 'until'", e.Until == UntilKind.None && e.ManualUntil.HasValue);
+
+            // Downloads: finish after a quiet stretch, not at the first pause
+            e = new Engine("PC", false);
+            e.TurnOnUntil(UntilKind.Downloads, null, null, T0);
+            StepUntil(e, s, T0, true);
+            T.Eq("downloads: status", "Awake - until downloads finish", e.StatusLine());
+            T.Check("downloads: no end time, no timer choice", !e.ManualUntil.HasValue && !e.ManualMinutes.HasValue);
+            StepUntil(e, s, T0.AddMinutes(1), false);
+            ev = StepUntil(e, s, T0.AddMinutes(2), false);
+            T.Check("downloads: a 1-minute pause doesn't end it", !ev.UntilEnded && e.Awake);
+            StepUntil(e, s, T0.AddMinutes(2.5), true);
+            StepUntil(e, s, T0.AddMinutes(3), false);
+            ev = StepUntil(e, s, T0.AddMinutes(4.9), false);
+            T.Check("downloads: traffic again restarts the quiet clock", !ev.UntilEnded);
+            ev = StepUntil(e, s, T0.AddMinutes(5), false);
+            T.Check("downloads: 2 quiet minutes ends it", ev.UntilEnded && !e.Awake);
+            T.Eq("downloads: what finished", "Downloads finished.", ev.Finished);
+
+            e = new Engine("PC", false);
+            e.TurnOnUntil(UntilKind.Downloads, null, null, T0);
+            StepUntil(e, s, T0, false);
+            ev = StepUntil(e, s, T0.AddMinutes(Engine.DownloadQuietMinutes), false);
+            T.Check("downloads: nothing downloading at all ends after the quiet stretch", ev.UntilEnded);
+
+            // An app closing
+            e = new Engine("PC", false);
+            e.TurnOnUntil(UntilKind.AppCloses, "Photoshop", "Adobe Photoshop", T0);
+            e.Then = DoneAction.ShutDown;
+            StepUntil(e, s, T0, true);
+            T.Eq("app: status", "Awake - until Adobe Photoshop closes, then shut down", e.StatusLine());
+            ev = StepUntil(e, s, T0.AddSeconds(5), false);
+            T.Check("app closed: ends right away and asks to shut down", ev.UntilEnded && ev.Then == DoneAction.ShutDown);
+            T.Eq("app: what finished", "Adobe Photoshop closed.", ev.Finished);
+            T.Check("app: the 'until' is cleared", e.Until == UntilKind.None && e.UntilLabel == null);
+
+            // A command (kapeyn run --then)
+            e = new Engine("PC", false);
+            e.TurnOnUntil(UntilKind.CommandEnds, "4242", "npm", T0);
+            e.Then = DoneAction.Lock;
+            StepUntil(e, s, T0, true);
+            T.Eq("command: status", "Awake - until npm finishes, then lock", e.StatusLine());
+            ev = StepUntil(e, s, T0.AddSeconds(5), false);
+            T.Check("command ended: asks to lock", ev.UntilEnded && ev.Then == DoneAction.Lock);
+            T.Eq("command: what finished", "npm finished.", ev.Finished);
+
+            // Work hours ending wins and drops the action
+            var hours = S();
+            hours.ScheduleEnabled = true;
+            e = new Engine("PC", true);
+            e.TurnOnUntil(UntilKind.Downloads, null, null, T0);
+            e.Then = DoneAction.ShutDown;
+            e.Step(hours, T0, true, None, false, -1, true);
+            ev = e.Step(hours, T0.AddSeconds(5), false, None, false, -1, true);
+            T.Check("work hours end: their own action, not 'When it's done'", ev.WorkHoursEnded && !ev.UntilEnded);
+            T.Eq("work hours end: action dropped", DoneAction.Nothing, e.Then);
+
+            // Words
+            DoneAction a;
+            T.Check("'sleep' is understood", Engine.TryParseThen("sleep", out a) && a == DoneAction.Sleep);
+            T.Check("'Shut Down' is understood", Engine.TryParseThen("Shut Down", out a) && a == DoneAction.ShutDown);
+            T.Check("'shut-down' is understood", Engine.TryParseThen("shut-down", out a) && a == DoneAction.ShutDown);
+            T.Check("'nothing' is understood", Engine.TryParseThen("nothing", out a) && a == DoneAction.Nothing);
+            T.Check("'explode' is rejected", !Engine.TryParseThen("explode", out a));
+        }
+    }
+
+    static class ThenOptionTests
+    {
+        static void Ok(string name, string[] args, bool leadingOnly, string expectedThen, string expectedRest)
+        {
+            string then;
+            bool ok = Cli.TakeThen(ref args, leadingOnly, out then);
+            T.Check(name, ok && then == expectedThen && string.Join(" ", args) == expectedRest,
+                    "then=" + (then ?? "null") + ", rest=" + string.Join(" ", args));
+        }
+
+        public static void Run()
+        {
+            Ok("on 2h --then sleep", new[] { "on", "2h", "--then", "sleep" }, false, "sleep", "on 2h");
+            Ok("--then before the time", new[] { "on", "--then", "lock", "2h" }, false, "lock", "on 2h");
+            Ok("--then=shutdown", new[] { "on", "1h", "--then=shutdown" }, false, "shutdown", "on 1h");
+            Ok("--then shut down (two words)", new[] { "until", "downloads", "--then", "shut", "down" }, false, "shutdown", "until downloads");
+            Ok("no --then", new[] { "on", "30m" }, false, null, "on 30m");
+            Ok("run: --then before the command", new[] { "--then", "sleep", "npm", "run", "build" }, true, "sleep", "npm run build");
+            Ok("run: the command's own --then is left alone", new[] { "mytool", "--then", "sleep" }, true, null, "mytool --then sleep");
+
+            string[] bad = { "on", "2h", "--then", "explode" };
+            string t;
+            var saved = Console.Error;
+            Console.SetError(System.IO.TextWriter.Null);
+            bool ok = Cli.TakeThen(ref bad, false, out t);
+            Console.SetError(saved);
+            T.Check("an unknown action is rejected", !ok);
+        }
     }
 
     static class FormatTests
@@ -502,7 +644,7 @@ namespace Kapeyn.Tests
         public static void Run()
         {
             var topics = HelpContent.Load();
-            T.Eq("11 topics", 11, topics.Count);
+            T.Eq("12 topics", 12, topics.Count);
             T.Check("topic titles are unique", topics.Select(t => t.Title).Distinct().Count() == topics.Count);
             T.Check("every topic has text", topics.All(t => t.Lines.Any(l => l.Trim().Length > 0)));
             string all = string.Join("\n", topics.Select(t => t.Title + "\n" + string.Join("\n", t.Lines.ToArray())).ToArray());
