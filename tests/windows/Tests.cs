@@ -464,6 +464,37 @@ namespace Kapeyn.Tests
         }
     }
 
+    static class PathTests
+    {
+        public static void Run()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "kapeyn-tests-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            string target = Path.Combine(dir, "kapeyn.com");
+            File.WriteAllText(target, "x");
+
+            T.Check("a normal file resolves to itself",
+                string.Equals(Native.RealPath(target), target, StringComparison.OrdinalIgnoreCase), Native.RealPath(target));
+            T.Check("a missing file is returned unchanged", Native.RealPath(target + ".missing") == target + ".missing");
+
+            // winget runs portable apps through a symbolic link in its own folder. Creating links needs admin
+            // rights or Developer Mode, so this part runs in CI (admin) and is skipped on locked-down PCs.
+            string linkDir = Path.Combine(dir, "Links");
+            Directory.CreateDirectory(linkDir);
+            string link = Path.Combine(linkDir, "kapeyn.exe");
+            if (Native.CreateSymbolicLink(link, target, 0x2 /* allow unprivileged */) && File.Exists(link))
+            {
+                T.Check("a symbolic link resolves to its target (winget's Links folder)",
+                    string.Equals(Native.RealPath(link), target, StringComparison.OrdinalIgnoreCase), Native.RealPath(link));
+            }
+            else
+            {
+                Console.WriteLine("  SKIP symbolic link test (needs admin or Developer Mode; runs in CI)");
+            }
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
     static class HelpTests
     {
         static readonly string[] KnownTokens = { "computer", "Computer", "shortcut", "tray", "rightclick", "RightClick", "startup", "version" };

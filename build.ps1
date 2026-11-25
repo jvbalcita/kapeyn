@@ -43,4 +43,8 @@ if ($running) { $running | Stop-Process -Force; $running | Wait-Process -Timeout
 Invoke-Csc @('/target:winexe', "/win32icon:$ico", "/out:$exe")
 Invoke-Csc @('/target:exe', '/define:CLI', "/win32icon:$ico", "/out:$com")
 
-foreach ($f in $exe, $com) { Write-Host "Built $f ($([math]::Round((Get-Item $f).Length / 1KB)) KB)" }
+# The same command-line tool with an .exe name, for package managers that don't accept .com (winget).
+$cli = Join-Path $dist 'kapeyn-cli.exe'
+Copy-Item $com $cli -Force
+
+foreach ($f in $exe, $com, $cli) { Write-Host "Built $f ($([math]::Round((Get-Item $f).Length / 1KB)) KB)" }
