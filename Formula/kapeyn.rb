@@ -6,8 +6,8 @@
 class Kapeyn < Formula
   desc "Keep your Mac awake, intelligently (menu bar app and kapeyn command)"
   homepage "https://github.com/jvbalcita/kapeyn"
-  url "https://github.com/jvbalcita/kapeyn/archive/refs/tags/v2.3.0.tar.gz"
-  sha256 "9f1da5df12a0a8c5c27b58a31b32c5fb2bf0221c52f47917d8e3d9fd24217604"
+  url "https://github.com/jvbalcita/kapeyn/archive/refs/tags/v2.3.1.tar.gz"
+  sha256 "732786047e031b45291bdf363d3c777ca73b707b62f19dda9751392816ebc3bd"
   license "MIT"
   head "https://github.com/jvbalcita/kapeyn.git", branch: "main"
 
